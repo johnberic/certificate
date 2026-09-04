@@ -10,7 +10,7 @@ fi
 
 # We add --skip-ssl to the mysql command for Debian 13 compatibility
 Query="SELECT user_name FROM users WHERE user_name='$username' AND auth_vpn=md5('$password') AND is_freeze='0' AND duration > 0"
-user_name=$(mysql --skip-ssl -u $USER -p$PASS -D $DB -h $HOST -sN -e "$Query")
+user_name=$(mysql --skip-ssl -u $USER -p$PASS -D $DB -h $HOST --silent --skip-column-names -e "$Query")
 
 # Check result
 if [ "$user_name" != '' ] && [ "$user_name" = "$username" ]; then
