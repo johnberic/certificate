@@ -223,7 +223,7 @@ log_file="/var/log/xray/access.log"
 if [ -f "$log_file" ]; then
     active_users=$(tail -n 100 "$log_file" | grep "accepted" | awk '{print $11}' | cut -d: -f1 | sort -u)
     for user in $active_users; do
-        mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "INSERT IGNORE INTO xray_online_users (username, server_ip) VALUES ('$user', '$ip')" 2>/dev/null
+        mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "INSERT IGNORE INTO xray_online (username, server_ip) VALUES ('$user', '$ip')" 2>/dev/null
     done
 fi
 
