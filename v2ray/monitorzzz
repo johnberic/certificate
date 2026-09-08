@@ -238,7 +238,7 @@ elif [[ $service == "xray" ]]; then
             fi
         done
     fi
-fi
+
 
 
 elif [[ $service == "pptp" ]];
