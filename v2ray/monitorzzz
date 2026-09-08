@@ -217,7 +217,7 @@ elif [[ $service == "xray" ]]; then
 
     mysql -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', xray_tls='$xray_tls', xray_ntls='$xray_ntls', xray_status='$xray', squid_status='$squid', squid='$squid_port', xray_vmess='$vmess', xray_vless='$vless', xray_trojan='$trojan', xray_ss='$ss', xray_online='$total_xray' WHERE server_ip='$ip' "
 
-    # 1. Panatilihin ang xray_online mo (walang binago)
+    # 1. Panatilihin ang xray_online mo
     mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "DELETE FROM xray_online WHERE server_ip='$ip'" 2>/dev/null
     
     # 2. I-reset muna lahat sa 0 ang is_connected at login_status
@@ -225,20 +225,17 @@ elif [[ $service == "xray" ]]; then
 
     log_file="/var/log/xray/access.log"
     if [ -f "$log_file" ]; then
-        # Kunin ang username sa tabi ng "email:"
         active_users=$(tail -n 150 "$log_file" | grep "accepted" | awk -F'email: ' '{print $2}' | awk '{print $1}' | sort -u)
         
         for user in $active_users; do
             if [ -n "$user" ] && [ "$user" != "-" ]; then
-                # Lagyan ng entry sa xray_online mo
                 mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "INSERT IGNORE INTO xray_online (username, server_ip) VALUES ('$user', '$ip')" 2>/dev/null
                 
-                # Gawing 1 ang is_connected at 'online' ang login_status gamit ang user_name
                 mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE users SET is_connected = 1, login_status = 'online' WHERE user_name = '$user'" 2>/dev/null
             fi
         done
-    fi  # <--- Isang fi para sa 'if [ -f "$log_file" ]'
-fi    # <--- Isang fi para sa 'elif [[ $service == "xray" ]];'
+    fi
+fi
 
 elif [[ $service == "pptp" ]];
 then
