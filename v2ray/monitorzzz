@@ -202,29 +202,43 @@ elif [[ $service == "xray" ]]; then
     x_port=${xray_port:-10001}
     total_xray=$(netstat -natp | grep xray | grep ":$x_port" | grep ESTABLISHED | awk '{print $4}' | cut -d: -f2 | sort -u | wc -l)
 
-    # 1. I-reset muna ang status ng mga user na nakakonekta LANG sa server IP na ito
-    mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE users SET is_connected = 0, login_status = 'offline' WHERE server_ip = '$ip'" 2>/dev/null
-
-    # 2. Linisin ang lumang online records ng server na ito
+    # 1. I-reset muna lahat sa 0
+    mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE users SET is_connected = 0, login_status = 'offline'" 2>/dev/null
     mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "DELETE FROM xray_online WHERE server_ip='$ip'" 2>/dev/null
     
     log_file="/var/log/xray/access.log"
     if [ -f "$log_file" ]; then
-        active_users=$(tail -n 150 "$log_file" | grep "accepted" | awk -F'email: ' '{print $2}' | awk '{print $1}' | sort -u)
+        # Taasan ang bilang ng babasahin sa log para hindi makaligtaan ang iba (hal. 500 lines o higit pa)
+        active_users=$(tail -n 500 "$log_file" | grep "accepted" | awk -F'email: ' '{print $2}' | awk '{print $1}' | sort -u)
         
-        for user in $active_users; do
-            if [ -n "$user" ] && [ "$user" != "-" ]; then
-                # Ipasok sa xray_online
-                mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "INSERT IGNORE INTO xray_online (username, server_ip) VALUES ('$user', '$ip')" 2>/dev/null
+        if [ -n "$active_users" ]; then
+            # Gumawa ng temporary file para sa batch insert/update
+            tmp_users="/tmp/xray_active_users.txt"
+            > "$tmp_users"
+            
+            for user in $active_users; do
+                if [ -n "$user" ] && [ "$user" != "-" ]; then
+                    echo "('$user', '$ip')" >> "$tmp_users"
+                fi
+            done
+            
+            if [ -s "$tmp_users" ]; then
+                # I-join ang mga values para isang query na lang ang gagawin sa database (Mass Insert)
+                values_str=$(paste -sd, "$tmp_users")
                 
-                # Gawing 1 ang is_connected at 'online' ang login_status para sa aktibong user
-                mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE users SET is_connected = 1, login_status = 'online' WHERE user_name = '$user'" 2>/dev/null
+                mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "INSERT IGNORE INTO xray_online (username, server_ip) VALUES $values_str" 2>/dev/null
+                
+                # I-update ang is_connected ng sabay-sabay gamit ang IN clause
+                users_list=$(awk -F"'" '{print "'\''" $2 "'\''"}' "$tmp_users" | paste -sd,)
+                mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE users SET is_connected = 1, login_status = 'online' WHERE user_name IN ($users_list)" 2>/dev/null
             fi
-        done
+            
+            rm -f "$tmp_users"
+        fi
     fi
 
-    # 3. Panghuling update sa server list status
     mysql -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', xray_tls='$xray_tls', xray_ntls='$xray_ntls', xray_status='$xray', squid_status='$squid', squid='$squid_port', xray_vmess='$vmess', xray_vless='$vless', xray_trojan='$trojan', xray_ss='$ss', xray_online='$total_xray' WHERE server_ip='$ip' "
+
 elif [[ $service == "openconnect" ]];
 then
 ocserv=$(systemctl is-active ocserv)
