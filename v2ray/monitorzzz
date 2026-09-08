@@ -204,27 +204,38 @@ echo "$output"
 
 mysql -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$ocserv', hysteria_status='$udphysteria', udp_status='$ocserv', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', squid_port='$squid_port', socket_port='$socket_port', online='$totalocserv', hysteria_online='$total_hysteria' WHERE server_ip='$ip' "
 
-elif [[ $service == "xray" ]];
-then
-xray=$(systemctl is-active xray.service)
-nginx=$(systemctl is-active nginx)
-squid=$(systemctl is-active squid)
+elif [[ $service == "xray" ]]; then
+    xray=$(systemctl is-active xray.service)
+    nginx=$(systemctl is-active nginx)
+    squid=$(systemctl is-active squid)
 
-. /root/.ports
-. /etc/xray/.db-base
+    . /root/.ports
+    . /etc/xray/.db-base
 
-x_port=${xray_port:-10001}
-total_xray=$(netstat -natp | grep xray | grep ":$x_port" | grep ESTABLISHED | awk '{print $4}' | cut -d: -f2 | sort -u | wc -l)
+    x_port=${xray_port:-10001}
+    total_xray=$(netstat -natp | grep xray | grep ":$x_port" | grep ESTABLISHED | awk '{print $4}' | cut -d: -f2 | sort -u | wc -l)
 
-mysql -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', xray_tls='$xray_tls', xray_ntls='$xray_ntls', xray_status='$xray', squid_status='$squid', squid='$squid_port', xray_vmess='$vmess', xray_vless='$vless', xray_trojan='$trojan', xray_ss='$ss', xray_online='$total_xray' WHERE server_ip='$ip' "
+    mysql -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', xray_tls='$xray_tls', xray_ntls='$xray_ntls', xray_status='$xray', squid_status='$squid', squid='$squid_port', xray_vmess='$vmess', xray_vless='$vless', xray_trojan='$trojan', xray_ss='$ss', xray_online='$total_xray' WHERE server_ip='$ip' "
 
-mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "DELETE FROM xray_online WHERE server_ip='$ip'" 2>/dev/null
-log_file="/var/log/xray/access.log"
-if [ -f "$log_file" ]; then
-    active_users=$(tail -n 100 "$log_file" | grep "accepted" | awk '{print $11}' | cut -d: -f1 | sort -u)
-    for user in $active_users; do
-        mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "INSERT IGNORE INTO xray_online (username, server_ip) VALUES ('$user', '$ip')" 2>/dev/null
-    done
+    # Original code mo para sa xray_online (hindi ginalaw)
+    mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "DELETE FROM xray_online WHERE server_ip='$ip'" 2>/dev/null
+    log_file="/var/log/xray/access.log"
+    
+    # I-reset muna lahat sa 0 (offline) ang is_connected ng mga user sa server na ito
+    mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE users SET is_connected = 0 WHERE server_ip = '$ip'" 2>/dev/null
+
+    if [ -f "$log_file" ]; then
+        active_users=$(tail -n 100 "$log_file" | grep "accepted" | awk '{print $11}' | cut -d: -f1 | sort -u)
+        for user in $active_users; do
+            # Lagyan ng entry sa xray_online (gaya ng dati mo)
+            mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "INSERT IGNORE INTO xray_online (username, server_ip) VALUES ('$user', '$ip')" 2>/dev/null
+            
+            # Gawing 1 (online) ang is_connected ng user na nakitang aktibo
+            if [ -n "$user" ]; then
+                mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE users SET is_connected = 1 WHERE username = '$user' AND server_ip = '$ip'" 2>/dev/null
+            fi
+        done
+    fi
 fi
 
 elif [[ $service == "pptp" ]];
