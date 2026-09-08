@@ -237,7 +237,8 @@ elif [[ $service == "xray" ]]; then
                 mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE users SET is_connected = 1, login_status = 'online' WHERE user_name = '$user'" 2>/dev/null
             fi
         done
-    fi
+    fi  # <--- Isang fi para sa 'if [ -f "$log_file" ]'
+fi    # <--- Isang fi para sa 'elif [[ $service == "xray" ]];'
 
 elif [[ $service == "pptp" ]];
 then
