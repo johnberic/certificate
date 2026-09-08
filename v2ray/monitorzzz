@@ -217,10 +217,8 @@ elif [[ $service == "xray" ]]; then
 
     mysql -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', xray_tls='$xray_tls', xray_ntls='$xray_ntls', xray_status='$xray', squid_status='$squid', squid='$squid_port', xray_vmess='$vmess', xray_vless='$vless', xray_trojan='$trojan', xray_ss='$ss', xray_online='$total_xray' WHERE server_ip='$ip' "
 
-    # 1. Panatilihin ang xray_online mo
     mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "DELETE FROM xray_online WHERE server_ip='$ip'" 2>/dev/null
     
-    # 2. I-reset muna lahat sa 0 ang is_connected at login_status
     mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE users SET is_connected = 0, login_status = 'offline'" 2>/dev/null
 
     log_file="/var/log/xray/access.log"
@@ -235,7 +233,6 @@ elif [[ $service == "xray" ]]; then
             fi
         done
     fi
-fi
 
 elif [[ $service == "pptp" ]];
 then
