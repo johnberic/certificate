@@ -154,20 +154,54 @@ total_hysteria=$(netstat -natp | awk "/$ip:53/ && /ESTABLISHED/ && /hysteria/" |
 
 mysql -u $USER -p$PASS -D $DB -h $HOST -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$tcpovpn', hysteria_status='$udphysteria', xray_status='$xray', ssh_online='$totalssh', slowdns_status='$slowdns', ssh_status='$sshd', dropbear_status='$dropbear', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', xray_port='$xray_port', slowdns_port='$slowdns_port', ssh_port='$ssh_port', dropbear_port='$dropbear_port', squid='$squid_port', socket='$socket_port', online='$totalovpn', hysteria_online='$total_hysteria' WHERE server_ip='$ip' "
 
-elif [[ $service == "openconnect" ]];
-then
-ocserv=$(systemctl is-active ocserv)
-udphysteria=$(systemctl is-active hysteria-server.service)
-squid=$(systemctl is-active squid)
-ssl=$(systemctl is-active stunnel4)
-socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
-#totalocserv=$(echo $(occtl -j -n  show users) | jq ". | length")
-totalocserv=$(netstat -natp | awk "/$ip:1194/ && /ESTABLISHED/ && /ocserv/" | wc -l)
-total_hysteria=$(netstat -natp | awk "/$ip:53/ && /ESTABLISHED/ && /hysteria/" | wc -l)
-. /root/.ports
-. /root/.db-base
+elif [[ $service == "openconnect" ]]; then
+    ocserv=$(systemctl is-active ocserv)
+    udphysteria=$(systemctl is-active hysteria-server.service)
+    squid=$(systemctl is-active squid)
+    ssl=$(systemctl is-active stunnel4)
+    socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
+    
+    . /root/.ports
+    . /root/.db-base # O kung saan nakalagay ang DB credentials mo
 
-output=$(cat <<EOF
+    # 1. Kunin ang listahan ng mga aktibong users mula sa occtl (JSON format)
+    oc_json=$(occtl -j show users 2>/dev/null)
+    totalocserv=$(echo "$oc_json" | jq ". | length" 2>/dev/null)
+    totalocserv=${totalocserv:-0}
+
+    total_hysteria=$(netstat -natp | awk "/$ip:53/ && /ESTABLISHED/ && /hysteria/" | wc -l)
+
+    # 2. I-reset muna ang lahat sa disconnected/offline sa database
+    mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE users SET is_connected = 0, login_status = 'offline' WHERE protocol = 'openconnect'" 2>/dev/null
+
+    # 3. Kung may mga nakakonekta, kunin ang usernames at i-update sila bilang connected/online
+    if [ "$totalocserv" -gt 0 ]; then
+        active_users=$(echo "$oc_json" | jq -r '.[].Username' 2>/dev/null)
+        
+        if [ -n "$active_users" ]; then
+            tmp_users="/tmp/openconnect_active_users.txt"
+            > "$tmp_users"
+            
+            for user in $active_users; do
+                if [ -n "$user" ] && [ "$user" != "null" ]; then
+                    echo "'$user'" >> "$tmp_users"
+                fi
+            done
+            
+            if [ -s "$tmp_users" ]; then
+                users_list=$(paste -sd, "$tmp_users")
+                # I-update ang status ng mga kasalukuyang online sa database
+                mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE users SET is_connected = 1, login_status = 'online' WHERE username IN ($users_list)" 2>/dev/null
+            fi
+            
+            rm -f "$tmp_users"
+        fi
+    fi
+
+    # 4. I-update ang pangkalahatang server status at total online users sa server_list
+    mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', hysteria_status='$udphysteria', udp_status='$ocserv', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', hysteria_port='$hysteria_port', squid='$squid_port', socket='$socket_port', online='$totalocserv', hysteria_online='$total_hysteria' WHERE server_ip='$ip'" 2>/dev/null
+
+    output=$(cat <<EOF
 {
  "service": "openconnect protocol",
  "ip": "$ip",
@@ -180,7 +214,6 @@ output=$(cat <<EOF
  "disk": "$disk",
  "uptime": "$uptime",
  "udp_hysteria": "$hysteria_port - $udphysteria",
- "tcp_port": "$tcp_port - $ocserv",
  "socket_port": "$socket_port - $socket",
  "squid_port": "$squid_port - $squid",
  "tcp_ssl_port": "$tcp_ssl_port - $ssl",
