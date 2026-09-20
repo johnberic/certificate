@@ -2,11 +2,11 @@
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 if ! command -v mysql &> /dev/null || ! command -v vnstat &> /dev/null; then
-    apt update && apt install -y default-mysql-client vnstat bc
+    apt update && apt install -y default-mysql-client vnstat iproute2 procps curl
 fi
 
 service=$1
-ip=$(curl -s --max-time 5 https://api.ipify.org)
+ip=$(curl -s --max-time 3 https://api.ipify.org)
 [ -z "$ip" ] && ip=$(hostname -I | awk '{print $1}')
 
 os="Linux"
@@ -15,7 +15,7 @@ cpu=$(grep "model name" /proc/cpuinfo | head -1 | cut -d ":" -f2 | xargs)
 memory=$(free -m | awk 'NR==2{printf "%s/%sMB", $3,$2}')
 disk=$(df -h / | awk 'NR==2{print $3 "/" $2}')
 uptime=$(uptime -p | sed 's/up //')
-bandwidth=$(vnstat --oneline | awk -F';' '{print $11}')
+bandwidth=$(vnstat --oneline 2>/dev/null | awk -F';' '{print $11}')
 [ -z "$bandwidth" ] && bandwidth="0 KB"
 
 # 4. LOAD & CLEAN CONFIGS
@@ -39,12 +39,14 @@ if [[ $service == "ssh" ]]; then
     squid=$(systemctl is-active squid 2>/dev/null || echo "inactive")
     ssl=$(systemctl is-active stunnel4 2>/dev/null || echo "inactive")
     socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
-    total_sshd=$(netstat -natp 2>/dev/null | grep -E ":22.*ESTABLISHED.*sshd" | wc -l)
-    total_dropbear=$(netstat -natp 2>/dev/null | grep -E ":441.*ESTABLISHED.*dropbear" | wc -l)
-    total_sshssl=$(netstat -natp 2>/dev/null | grep -E ":443.*ESTABLISHED.*stunnel4" | wc -l)
+    
+    # Gumamit ng 'ss' sa halip na 'netstat' para hindi mag-stock sa Debian 12
+    total_sshd=$(ss -tnp 2>/dev/null | grep -E ":22\s" | grep -i "ESTAB" | wc -l)
+    total_dropbear=$(ss -tnp 2>/dev/null | grep -E ":441\s" | grep -i "ESTAB" | wc -l)
+    total_sshssl=$(ss -tnp 2>/dev/null | grep -E ":443\s" | grep -i "ESTAB" | wc -l)
     totalssh=$((total_sshd + total_dropbear + total_sshssl))
     
-    mysql --skip-ssl -u "$USER" -p"$PASS" -D "$DB" -h "$HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', ssh_online='$totalssh', ssh_status='$sshd', dropbear_status='$dropbear', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', ssh_port='${ssh_port:-22}', dropbear_port='${dropbear_port:-441}', squid='${squid_port:-3128}', socket='${socket_port:-80}' WHERE server_ip='$ip'"
+    mysql --connect-timeout=5 --skip-ssl -u "$USER" -p"$PASS" -D "$DB" -h "$HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', ssh_online='$totalssh', ssh_status='$sshd', dropbear_status='$dropbear', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', ssh_port='${ssh_port:-22}', dropbear_port='${dropbear_port:-441}', squid='${squid_port:-3128}', socket='${socket_port:-80}' WHERE server_ip='$ip'"
 
 # 6. PROTOCOL LOGIC (OPENVPN)
 elif [[ $service == "openvpn" ]]; then
@@ -57,16 +59,16 @@ elif [[ $service == "openvpn" ]]; then
     tcpusers=$([ -f /etc/openvpn/server/tcpclient.log ] && sed -n '/^ROUTING_TABLE/p' /etc/openvpn/server/tcpclient.log | wc -l || echo 0)
     udpusers=$([ -f /etc/openvpn/server/udpclient.log ] && sed -n '/^ROUTING_TABLE/p' /etc/openvpn/server/udpclient.log | wc -l || echo 0)
     totalovpn=$((tcpusers + udpusers))
-    total_hysteria=$(netstat -natp 2>/dev/null | grep -E ":5666.*ESTABLISHED.*hysteria" | wc -l)
+    total_hysteria=$(ss -tnp 2>/dev/null | grep -E ":5666\s" | grep -i "ESTAB" | wc -l)
     
-    mysql --skip-ssl -u "$USER" -p"$PASS" -D "$DB" -h "$HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='${tcp_ssl_port:-443}', udpssl='${udp_ssl_port:-443}', tcp_status='$tcpovpn', hysteria_status='$udphysteria', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='${tcp_port:-1194}', udp='${udp_port:-1194}', hysteria_port='${hysteria_port:-5666}', squid='${squid_port:-3128}', socket='${socket_port:-80}', online='$totalovpn', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
+    mysql --connect-timeout=5 --skip-ssl -u "$USER" -p"$PASS" -D "$DB" -h "$HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='${tcp_ssl_port:-443}', udpssl='${udp_ssl_port:-443}', tcp_status='$tcpovpn', hysteria_status='$udphysteria', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='${tcp_port:-1194}', udp='${udp_port:-1194}', hysteria_port='${hysteria_port:-5666}', squid='${squid_port:-3128}', socket='${socket_port:-80}', online='$totalovpn', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
 
 # 7. PROTOCOL LOGIC (HYSTERIA)
 elif [[ $service == "hysteria" ]]; then
     udphysteria=$(systemctl is-active hysteria-server.service 2>/dev/null || echo "inactive")
-    total_hysteria=$(netstat -natp 2>/dev/null | grep -E ":5666.*ESTABLISHED.*hysteria" | wc -l)
+    total_hysteria=$(ss -tnp 2>/dev/null | grep -E ":5666\s" | grep -i "ESTAB" | wc -l)
     
-    mysql --skip-ssl -u "$USER" -p"$PASS" -D "$DB" -h "$HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', hysteria_status='$udphysteria', hysteria_port='${hysteria_port:-5666}', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
+    mysql --connect-timeout=5 --skip-ssl -u "$USER" -p"$PASS" -D "$DB" -h "$HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', hysteria_status='$udphysteria', hysteria_port='${hysteria_port:-5666}', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
 
 # 8. ALL-IN-ONE (AIO) LOGIC
 elif [[ $service == "aio" ]]; then
