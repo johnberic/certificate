@@ -39,8 +39,6 @@ if [[ $service == "ssh" ]]; then
     squid=$(systemctl is-active squid 2>/dev/null || echo "inactive")
     ssl=$(systemctl is-active stunnel4 2>/dev/null || echo "inactive")
     socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
-    
-    # Gumamit ng 'ss' sa halip na 'netstat' para hindi mag-stock sa Debian 12
     total_sshd=$(ss -tnp 2>/dev/null | grep -E ":22\s" | grep -i "ESTAB" | wc -l)
     total_dropbear=$(ss -tnp 2>/dev/null | grep -E ":441\s" | grep -i "ESTAB" | wc -l)
     total_sshssl=$(ss -tnp 2>/dev/null | grep -E ":443\s" | grep -i "ESTAB" | wc -l)
