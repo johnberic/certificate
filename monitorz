@@ -13,14 +13,15 @@ if [[ $service == "ssh" ]];
 then
 ssh=$(systemctl is-active sshd)
 dropbear=$((echo >/dev/tcp/localhost/44) &>/dev/null && echo "active" || echo "inactive")
-squid=$(systemctl is-active haproxy)
+squid=$(systemctl is-active haproxy) # Kung Squid talaga ito, palitan mo ng 'squid' sa halip na 'haproxy'
 ssl=$(systemctl is-active stunnel4)
 socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
 total_sshd=$(netstat -natp | awk "/$ip:22\y/ && /ESTABLISHED/ && /sshd/" | wc -l)
 total_dropbear=$(netstat -natp | awk "/$ip:44\y/ && /ESTABLISHED/ && /dropbear/" | wc -l)
 total_socket=$(netstat -natp | awk "/$ip:80\y/ && /ESTABLISHED/ && /python/" | wc -l)
 total_ssl=$(netstat -natp | awk "/$ip:443\y/ && /ESTABLISHED/ && /stunnel4/" | wc -l)
-totalssh=$((total_sshd + total_dropbear + total_socket + total_ssl))
+total_proxy8080=$(netstat -natp | awk "/$ip:8080\y/ && /ESTABLISHED/" | wc -l)
+totalssh=$((total_sshd + total_dropbear + total_socket + total_ssl + total_proxy8080))
 . /root/.ports
 
 output=$(cat <<EOF
@@ -28,6 +29,7 @@ output=$(cat <<EOF
  "service": "ssh protocol",
  "ip": "$ip",
  "users": "$totalssh",
+ "proxy_users_8080": "$total_proxy8080",
  "bandwidth": "$bandwidth",
  "os": "$os",
  "distro": "$distro",
@@ -52,6 +54,7 @@ then
 udphysteria=$(systemctl is-active hysteria-server.service)
 squid=$(systemctl is-active haproxy)
 total_hysteria=$(netstat -natp | awk "/$ip:53/ && /ESTABLISHED/ && /hysteria/" | wc -l)
+total_proxy8080=$(netstat -natp | awk "/$ip:8080/ && /ESTABLISHED/" | wc -l)
 . /root/.ports
 . /root/.db-base
 
@@ -60,6 +63,7 @@ output=$(cat <<EOF
  "service": "openvpn protocol",
  "ip": "$ip",
  "users": "$totalovpn",
+ "proxy_users_8080": "$total_proxy8080",
  "bandwidth": "$bandwidth",
  "os": "$os",
  "distro": "$distro",
@@ -95,12 +99,12 @@ squid=$(systemctl is-active haproxy)
 ssl=$(systemctl is-active stunnel4)
 socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
 
-# Binago mula ROUTING_TABLE patungong CLIENT_LIST para sa real-time active users
 tcpusers=$(sed -n '/^CLIENT_LIST/,/^ROUTING_TABLE/p' /etc/openvpn/server/tcpclient.log | grep -v '^CLIENT_LIST' | grep -v '^ROUTING_TABLE' | grep -v '^$' | wc -l)
 udpusers=$(sed -n '/^CLIENT_LIST/,/^ROUTING_TABLE/p' /etc/openvpn/server/udpclient.log | grep -v '^CLIENT_LIST' | grep -v '^ROUTING_TABLE' | grep -v '^$' | wc -l)
 
 totalovpn=$((tcpusers + udpusers))
 total_hysteria=$(netstat -natp | awk "/$ip:53/ && /ESTABLISHED/ && /hysteria/" | wc -l)
+total_proxy8080=$(netstat -natp | awk "/$ip:8080/ && /ESTABLISHED/" | wc -l)
 . /root/.ports
 . /etc/openvpn/login/config.sh
 
@@ -109,6 +113,7 @@ output=$(cat <<EOF
  "service": "openvpn protocol",
  "ip": "$ip",
  "users": "$totalovpn",
+ "proxy_users_8080": "$total_proxy8080",
  "bandwidth": "$bandwidth",
  "os": "$os",
  "distro": "$distro",
@@ -142,7 +147,6 @@ squid=$(systemctl is-active haproxy)
 ssl=$(systemctl is-active stunnel4)
 socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
 
-# Binago rin dito para sa AIO block
 tcpusers=$(sed -n '/^CLIENT_LIST/,/^ROUTING_TABLE/p' /etc/openvpn/server/tcpclient.log | grep -v '^CLIENT_LIST' | grep -v '^ROUTING_TABLE' | grep -v '^$' | wc -l)
 udpusers=$(sed -n '/^CLIENT_LIST/,/^ROUTING_TABLE/p' /etc/openvpn/server/udpclient.log | grep -v '^CLIENT_LIST' | grep -v '^ROUTING_TABLE' | grep -v '^$' | wc -l)
 
@@ -153,11 +157,15 @@ total_socket1=$(netstat -natp | awk "/$ip:8000/ && /ESTABLISHED/ && /python/" | 
 total_socket2=$(netstat -natp | awk "/$ip:8001/ && /ESTABLISHED/ && /python/" | wc -l)
 total_socket3=$(netstat -natp | awk "/$ip:8002/ && /ESTABLISHED/ && /python/" | wc -l)
 total_sshssl=$(netstat -natp | awk "/$ip:445/ && /ESTABLISHED/ && /stunnel4/" | wc -l)
-totalssh=$((total_sshd + total_dropbear + total_socket1 + total_socket2 + total_socket3 + total_sshssl))
+total_proxy8080=$(netstat -natp | awk "/$ip:8080/ && /ESTABLISHED/" | wc -l)
+
+# Idinagdag ang total_proxy8080 sa totalssh kung sakaling gusto mong bilangin sila bilang SSH-like connections. Kung hindi, tanggalin ito.
+totalssh=$((total_sshd + total_dropbear + total_socket1 + total_socket2 + total_socket3 + total_sshssl + total_proxy8080))
 total_hysteria=$(netstat -natp | awk "/$ip:53/ && /ESTABLISHED/ && /hysteria/" | wc -l)
 . /root/.ports
 . /etc/openvpn/login/config.sh
 
+# Ipinagpalagay ko na may column kang magse-save ng 8080 stats, kung wala sa database, maaari mong tanggalin ang bahaging ito sa UPDATE statement.
 mysql -u $USER -p$PASS -D $DB -h $HOST -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$tcpovpn', hysteria_status='$udphysteria', xray_status='$xray', ssh_online='$totalssh', slowdns_status='$slowdns', ssh_status='$sshd', dropbear_status='$dropbear', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', xray_port='$xray_port', slowdns_port='$slowdns_port', ssh_port='$ssh_port', dropbear_port='$dropbear_port', squid='$squid_port', socket='$socket_port', online='$totalovpn', hysteria_online='$total_hysteria' WHERE server_ip='$ip' "
 
 elif [[ $service == "openconnect" ]];
@@ -169,6 +177,7 @@ ssl=$(systemctl is-active stunnel4)
 socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
 totalocserv=$(netstat -natp | awk "/$ip:1194/ && /ESTABLISHED/ && /ocserv/" | wc -l)
 total_hysteria=$(netstat -natp | awk "/$ip:53/ && /ESTABLISHED/ && /hysteria/" | wc -l)
+total_proxy8080=$(netstat -natp | awk "/$ip:8080/ && /ESTABLISHED/" | wc -l)
 . /root/.ports
 . /root/.db-base
 
@@ -177,6 +186,7 @@ output=$(cat <<EOF
  "service": "openconnect protocol",
  "ip": "$ip",
  "users": "$totalocserv",
+ "proxy_users_8080": "$total_proxy8080",
  "bandwidth": "$bandwidth",
  "os": "$os",
  "distro": "$distro",
