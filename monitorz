@@ -44,7 +44,8 @@ if [[ $service == "ssh" ]]; then
     total_sshssl=$(ss -tnp 2>/dev/null | grep -E ":443\s" | grep -i "ESTAB" | wc -l)
     totalssh=$((total_sshd + total_dropbear + total_sshssl))
     
-    mysql --connect-timeout=3 --skip-ssl --skip-name-resolve -u "$USER" -p"$PASS" -D "$DB" -h "$HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='ssh', ssh_online='$totalssh', ssh_status='$sshd', dropbear_status='$dropbear', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', ssh_port='${ssh_port:-22}', dropbear_port='${dropbear_port:-441}', squid='${squid_port:-3128}', socket='${socket_port:-80}' WHERE server_ip='$ip'" 2>/dev/null
+    echo "Updating MySQL for SSH..."
+    mysql --connect-timeout=5 --skip-ssl --skip-name-resolve -u "$USER" -p"$PASS" -D "$DB" -h "$HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='ssh', ssh_online='$totalssh', ssh_status='$sshd', dropbear_status='$dropbear', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', ssh_port='${ssh_port:-22}', dropbear_port='${dropbear_port:-441}', squid='${squid_port:-3128}', socket='${socket_port:-80}' WHERE server_ip='$ip'"
 
 # 6. PROTOCOL LOGIC (OPENVPN)
 elif [[ $service == "openvpn" ]]; then
@@ -59,21 +60,23 @@ elif [[ $service == "openvpn" ]]; then
     totalovpn=$((tcpusers + udpusers))
     total_hysteria=$(ss -tnp 2>/dev/null | grep -E ":5666\s" | grep -i "ESTAB" | wc -l)
     
-    mysql --connect-timeout=3 --skip-ssl --skip-name-resolve -u "$USER" -p"$PASS" -D "$DB" -h "$HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='openvpn', tcpssl='${tcp_ssl_port:-443}', udpssl='${udp_ssl_port:-443}', tcp_status='$tcpovpn', hysteria_status='$udphysteria', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='${tcp_port:-1194}', udp='${udp_port:-1194}', hysteria_port='${hysteria_port:-5666}', squid='${squid_port:-3128}', socket='${socket_port:-80}', online='$totalovpn', hysteria_online='$total_hysteria' WHERE server_ip='$ip'" 2>/dev/null
+    echo "Updating MySQL for OpenVPN..."
+    mysql --connect-timeout=5 --skip-ssl --skip-name-resolve -u "$USER" -p"$PASS" -D "$DB" -h "$HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='openvpn', tcpssl='${tcp_ssl_port:-443}', udpssl='${udp_ssl_port:-443}', tcp_status='$tcpovpn', hysteria_status='$udphysteria', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='${tcp_port:-1194}', udp='${udp_port:-1194}', hysteria_port='${hysteria_port:-5666}', squid='${squid_port:-3128}', socket='${socket_port:-80}', online='$totalovpn', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
 
 # 7. PROTOCOL LOGIC (HYSTERIA)
 elif [[ $service == "hysteria" ]]; then
     udphysteria=$(systemctl is-active hysteria-server.service 2>/dev/null || echo "inactive")
     total_hysteria=$(ss -tnp 2>/dev/null | grep -E ":5666\s" | grep -i "ESTAB" | wc -l)
     
-    mysql --connect-timeout=3 --skip-ssl --skip-name-resolve -u "$USER" -p"$PASS" -D "$DB" -h "$HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='hysteria', hysteria_status='$udphysteria', hysteria_port='${hysteria_port:-5666}', hysteria_online='$total_hysteria' WHERE server_ip='$ip'" 2>/dev/null
+    echo "Updating MySQL for Hysteria..."
+    mysql --connect-timeout=5 --skip-ssl --skip-name-resolve -u "$USER" -p"$PASS" -D "$DB" -h "$HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='hysteria', hysteria_status='$udphysteria', hysteria_port='${hysteria_port:-5666}', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
 
 # 8. ALL-IN-ONE (AIO) LOGIC
 elif [[ $service == "aio" ]]; then
-    bash /etc/.monitor ssh &
-    bash /etc/.monitor openvpn &
-    bash /etc/.monitor hysteria &
-    wait
+    bash /etc/.monitor ssh
+    bash /etc/.monitor openvpn
+    bash /etc/.monitor hysteria
+    echo "AIO Sync Complete."
 
 elif [[ $service == "reboot" ]]; then
     reboot
