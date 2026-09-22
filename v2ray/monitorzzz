@@ -249,28 +249,28 @@ elif [[ $service == "xray" ]]; then
                     user_ip=$(echo "$recent_logs" | grep "email: $user" | tail -n 1 | grep -oE 'from [0-9.]+' | awk '{print $2}')
                     user_ip=${user_ip:-$ip}
 
-                    # 2. Kunin ang current bytes mula sa Xray API
-                    current_up=$(echo "$all_stats" | awk -v u="$user" '$0 ~ "user>>>"u">>>traffic>>>uplink" {getline; print}' | grep -o '[0-9]*' | head -n 1)
-                    current_down=$(echo "$all_stats" | awk -v u="$user" '$0 ~ "user>>>"u">>>traffic>>>downlink" {getline; print}' | grep -o '[0-9]*' | head -n 1)
+                    # 2. Tuwirang pagkuha ng value gamit ang grep -A 1 sa eksaktong user key
+                    current_up=$(echo "$all_stats" | grep -F "user>>>$user>>>traffic>>>uplink" -A 1 | grep '"value":' | head -n 1 | grep -o '[0-9]*')
+                    current_down=$(echo "$all_stats" | grep -F "user>>>$user>>>traffic>>>downlink" -A 1 | grep '"value":' | head -n 1 | grep -o '[0-9]*')
                     
+                    # Fallback kung sakaling blangko
                     current_up=${current_up:-0}
                     current_down=${current_down:-0}
                     
                     [[ "$current_up" =~ ^[0-9]+$ ]] || current_up=0
                     [[ "$current_down" =~ ^[0-9]+$ ]] || current_down=0
 
-                    # Kabuuang total bandwidth para sa cycle na ito (upload + download)
                     total_cycle_bandwidth=$((current_up + current_down))
 
                     current_time=$(date '+%Y-%m-%d %H:%M:%S')
                     current_ts=$(date +%s)
 
-                    # 3. I-insert o i-update sa bandwidth_logs kung saan nag-a-add (cumulative total) ang values
+                    # 3. I-insert o i-update sa bandwidth_logs na may cumulative total
                     sql_insert="INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) VALUES ('Xray', '$ip', '$x_port', '$current_time', '$user', '$user_ip', '$current_down', '$current_up', '$total_cycle_bandwidth', '$current_time', '$current_time', '$current_time', 'online', '$current_ts', 'premium') ON DUPLICATE KEY UPDATE bytes_received = bytes_received + $current_down, bytes_sent = bytes_sent + $current_up, bandwidth = bandwidth + $total_cycle_bandwidth, time='$current_time', status='online';"
                     
                     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "$sql_insert" 2>/dev/null
                     
-                    # 4. I-update ang users table para sa total usage
+                    # 4. I-update ang users table
                     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE users SET is_connected = 1, login_status = 'online', xray_upload = xray_upload + $current_up, xray_download = xray_download + $current_down WHERE user_name = '$user'" 2>/dev/null
                 fi
             done
