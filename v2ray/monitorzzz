@@ -181,11 +181,59 @@ elif [[ $service == "openconnect" ]]; then
     [ -f /root/.db-base ] && . /root/.db-base
 
     totalocserv=0
+    
+    # I-reset muna ang status ng mga connected users sa database bago mag-log ulit
+    mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE bandwidth_logs SET status='offline' WHERE server='OpenConnect' AND server_ip='$ip'" 2>/dev/null
+
     if [ "$ocserv" = "active" ]; then
+        # Subukan kunin ang aktibong user data gamit ang occtl json output
         if command -v occtl &>/dev/null; then
-            totalocserv=$(occtl -n show users 2>/dev/null | grep -v "No users" | grep -v "Username" | grep -v "^[[:space:]]*$" | wc -l)
+            ocserv_json=$(occtl -j show users 2>/dev/null)
+            totalocserv=$(echo "$ocserv_json" | grep -o '"Username"' | wc -l)
+            
+            if [ "$totalocserv" -gt 0 ] && command -v python3 &>/dev/null; then
+                # Gamitin ang python para i-parse ang JSON ng occtl para diretsong makuha ang bytes at username
+                python3 - "$ocserv_json" "$ip" "$DB_USER" "$DB_PASS" "$DB_NAME" "$DB_HOST" << 'EOF'
+import sys
+import json
+import subprocess
+
+try:
+    data = json.loads(sys.argv[1])
+    server_ip = sys.argv[2]
+    db_user = sys.argv[3]
+    db_pass = sys.argv[4]
+    db_name = sys.argv[5]
+    db_host = sys.argv[6]
+
+    users_list = data if isinstance(data, list) else data.get('users', [])
+    
+    for u in users_list:
+        username = u.get('Username', 'unknown')
+        remote_ip = u.get('Remote IP', server_ip)
+        rx_bytes = int(u.get('Bytes Received', 0))
+        tx_bytes = int(u.get('Bytes Sent', 0))
+        total_bw = rx_bytes + tx_bytes
+        
+        import datetime
+        current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        current_ts = int(datetime.datetime.now().timestamp())
+        
+        sql = f"""
+        INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) 
+        VALUES ('OpenConnect', '{server_ip}', '443', '{current_time}', '{username}', '{remote_ip}', {rx_bytes}, {tx_bytes}, {total_bw}, '{current_time}', '{current_time}', '{current_time}', 'online', {current_ts}, 'premium') 
+        ON DUPLICATE KEY UPDATE bytes_received = {rx_bytes}, bytes_sent = {tx_bytes}, bandwidth = {total_bw}, time='{current_time}', status='online';
+        """
+        
+        cmd = ["mysql", "--skip-ssl", "-u", db_user, "-p" + db_pass, "-D", db_name, "-h", db_host, "-e", sql]
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+except Exception as e:
+    pass
+EOF
+            fi
         fi
         
+        # Fallback kung walang occtl o walang JSON output
         if [ "$totalocserv" -eq 0 ]; then
             totalocserv=$(netstat -anp 2>/dev/null | grep -i "ocserv-main" | grep "ESTABLISHED" | wc -l)
             if [ "$totalocserv" -eq 0 ]; then
