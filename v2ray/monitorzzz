@@ -233,6 +233,8 @@ elif [[ $service == "xray" ]]; then
     x_port=${xray_port:-10001}
     total_xray=$(ss -tnp | grep 'xray' | grep ":$x_port" | grep ESTAB | awk '{print $5}' | cut -d: -f1 | sort -u | wc -l)
 
+    echo "[DEBUG] Total active Xray connections (ss): $total_xray"
+
     # 1. I-reset muna ang status sa users table sa simula
     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE users SET is_connected = 0, login_status = 'offline'" 2>/dev/null
     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "DELETE FROM bandwidth_logs WHERE server_ip='$ip'" 2>/dev/null
@@ -242,43 +244,57 @@ elif [[ $service == "xray" ]]; then
         recent_logs=$(tail -n 300 "$log_file" | grep -E "accepted")
         active_users=$(echo "$recent_logs" | grep -oE 'email: [^[:space:]]+' | awk '{print $2}' | tr -d '"'\'' ' | sort -u)
         
+        echo "[DEBUG] Active users found in logs: $active_users"
+
         if [ -n "$active_users" ]; then
             for user in $active_users; do
                 if [ -n "$user" ] && [ "$user" != "-" ]; then
-                    # Kunin ang IP address ng user
                     user_ip=$(echo "$recent_logs" | grep "email: $user" | tail -n 1 | grep -oE 'from [0-9.]+' | awk '{print $2}')
                     user_ip=${user_ip:-$ip}
 
+                    echo "[DEBUG] Processing user: $user (IP: $user_ip)"
+
                     # 2. Kunin ang upload at download bytes mula sa Xray API Stats
-                    # Gumagamit tayo ng mas detalyadong pagkuha ng value galing sa JSON output ng statsquery
                     raw_up=$(xray api statsquery --server=127.0.0.1:10000 -name "user>>>$user>>>traffic>>>uplink" 2>/dev/null)
                     raw_down=$(xray api statsquery --server=127.0.0.1:10000 -name "user>>>$user>>>traffic>>>downlink" 2>/dev/null)
+
+                    echo "[DEBUG] Raw UP for $user: $raw_up"
+                    echo "[DEBUG] Raw DOWN for $user: $raw_down"
 
                     up_bytes=$(echo "$raw_up" | grep -o '"value":[^,}]*' | awk -F':' '{print $2}' | tr -d '[:space:]')
                     down_bytes=$(echo "$raw_down" | grep -o '"value":[^,}]*' | awk -F':' '{print $2}' | tr -d '[:space:]')
                     
-                    # Fallback kung walang makuha o sakaling blangko
                     up_bytes=${up_bytes:-0}
                     down_bytes=${down_bytes:-0}
-
-                    # Kalkulahin ang kabuuang bandwidth (uplink + downlink o kung ano man ang kailangan sa bandwidth column)
                     total_bandwidth=$((up_bytes + down_bytes))
-                    
+
+                    echo "[DEBUG] Parsed -> UP: $up_bytes | DOWN: $down_bytes | TOTAL: $total_bandwidth"
+
                     current_time=$(date '+%Y-%m-%d %H:%M:%S')
                     current_ts=$(date +%s)
 
-                    # 3. I-insert sa bandwidth_logs na may kasamang tamang bytes_received, bytes_sent, at bandwidth
-                    mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) VALUES ('Xray', '$ip', '$x_port', '$current_time', '$user', '$user_ip', '$down_bytes', '$up_bytes', '$total_bandwidth', '$current_time', '$current_time', '$current_time', 'online', '$current_ts', 'premium')" 2>/dev/null
+                    # 3. I-insert sa bandwidth_logs
+                    sql_insert="INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) VALUES ('Xray', '$ip', '$x_port', '$current_time', '$user', '$user_ip', '$down_bytes', '$up_bytes', '$total_bandwidth', '$current_time', '$current_time', '$current_time', 'online', '$current_ts', 'premium');"
+                    
+                    mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "$sql_insert"
+                    if [ $? -eq 0 ]; then
+                        echo "[DEBUG] Successfully inserted into bandwidth_logs for $user"
+                    else
+                        echo "[DEBUG] ERROR inserting into bandwidth_logs for $user"
+                    fi
                     
                     # 4. I-update ang users table
-                    mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE users SET is_connected = 1, login_status = 'online', xray_upload = xray_upload + $up_bytes, xray_download = xray_download + $down_bytes WHERE user_name = '$user'" 2>/dev/null
+                    mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE users SET is_connected = 1, login_status = 'online', xray_upload = xray_upload + $up_bytes, xray_download = xray_download + $down_bytes WHERE user_name = '$user'"
                 fi
             done
         fi
+    else
+        echo "[DEBUG] Log file not found or total_xray is 0."
     fi
 
     # 5. I-update ang server status list
     mysql -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', xray_tls='$xray_tls', xray_ntls='$xray_ntls', xray_status='$xray', squid_status='$squid', squid='$squid_port', xray_vmess='$vmess', xray_vless='$vless', xray_trojan='$trojan', xray_ss='$ss', xray_online='$total_xray' WHERE server_ip='$ip'"
+    echo "[DEBUG] Server list updated."
 
 
 elif [[ $service == "pptp" ]]; then
