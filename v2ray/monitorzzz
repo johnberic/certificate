@@ -248,8 +248,12 @@ elif [[ $service == "xray" ]]; then
                     # 2. I-insert sa xray_online
                     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "INSERT IGNORE INTO xray_online (username, server_ip) VALUES ('$user', '$ip')" 2>/dev/null
                     
-                    # 3. DIREKTANG GAWING 1 ang is_connected para sa user na ito sa users table
+                    # 3. Gawing 1 ang is_connected para sa user na ito
                     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE users SET is_connected = 1, login_status = 'online' WHERE user_name = '$user'" 2>/dev/null
+                    
+                    # (Optional) Kung gusto mong i-sum ang bytes mula sa log kung kasama ito sa format mo:
+                    # user_bytes=$(grep "$user" "$log_file" | tail -n 100 | awk '{...sumahin ang bytes...}')
+                    # mysql ... -e "UPDATE users SET usage = usage + $user_bytes WHERE user_name = '$user'"
                 fi
             done
         fi
@@ -257,7 +261,6 @@ elif [[ $service == "xray" ]]; then
 
     # 4. I-update ang server status
     mysql -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', xray_tls='$xray_tls', xray_ntls='$xray_ntls', xray_status='$xray', squid_status='$squid', squid='$squid_port', xray_vmess='$vmess', xray_vless='$vless', xray_trojan='$trojan', xray_ss='$ss', xray_online='$total_xray' WHERE server_ip='$ip'"
-
 
 
 
