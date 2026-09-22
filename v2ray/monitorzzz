@@ -156,17 +156,22 @@ elif [[ $service == "aio" ]]; then
     mysql -u $USER -p$PASS -D $DB -h $HOST -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$tcpovpn', hysteria_status='$udphysteria', xray_status='$xray', ssh_online='$totalssh', slowdns_status='$slowdns', ssh_status='$sshd', dropbear_status='$dropbear', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', xray_port='$xray_port', slowdns_port='$slowdns_port', ssh_port='$ssh_port', dropbear_port='$dropbear_port', squid='$squid_port', socket='$socket_port', online='$totalovpn', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
 
 elif [[ $service == "openconnect" ]]; then
+    echo "[DEBUG] Patuloy na sinusuri ang Openconnect at Hysteria status..."
+    
     ocserv=$(systemctl is-active ocserv)
     udphysteria=$(systemctl is-active hysteria-server.service)
     squid=$(systemctl is-active squid)
     ssl=$(systemctl is-active stunnel4)
     socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
     
-    # Bilangin ang koneksyon
+    # Kunin ang raw count mula sa netstat
     raw_ocserv=$(netstat -natp | awk "/$ip:1194/ && /ESTABLISHED/ && /ocserv/" | wc -l)
     raw_hysteria=$(netstat -natp | awk "/$ip:53/ && /ESTABLISHED/ && /hysteria/" | wc -l)
     
-    # Gawing 1 kung may koneksyon, 0 kung wala (Binary status)
+    echo "[DEBUG] Raw OpenConnect count: $raw_ocserv"
+    echo "[DEBUG] Raw Hysteria count: $raw_hysteria"
+    
+    # Gawing 1 o 0 (Binary status)
     if [ "$raw_ocserv" -gt 0 ]; then
         totalocserv=1
     else
@@ -177,7 +182,10 @@ elif [[ $service == "openconnect" ]]; then
         total_hysteria=1
     else
         total_hysteria=0
-    fi
+    end
+    
+    echo "[DEBUG] Final Online Status (online): $totalocserv"
+    echo "[DEBUG] Final Hysteria Status (hysteria_online): $total_hysteria"
 
     . /root/.ports
     . /root/.db-base
@@ -204,7 +212,11 @@ elif [[ $service == "openconnect" ]]; then
 EOF
 )
 
-    mysql -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$ocserv', hysteria_status='$udphysteria', udp_status='$ocserv', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', squid='$squid_port', socket='$socket_port', online='$totalocserv', hysteria_online='$total_hysteria' WHERE server_ip='$ip' "
+    echo "[DEBUG] Nag-a-update sa MySQL database para sa IP: $ip..."
+    
+    mysql -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$ocserv', hysteria_status='$udphysteria', udp_status='$ocserv', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', squid='$squid_port', socket_port='$socket_port', online='$totalocserv', hysteria_online='$total_hysteria' WHERE server_ip='$ip' "
+    
+    echo "[DEBUG] Tapos na ang pag-update."
 
 
 elif [[ $service == "xray" ]]; then
