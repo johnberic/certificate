@@ -183,8 +183,8 @@ elif [[ $service == "openconnect" ]]; then
     totalocserv=0
 
     if [ "$ocserv" = "active" ]; then
-        # Kunin ang huling mga log entries ng ocserv para sa active sessions (username at ang assigned interface nito)
-        ocserv_logs=$(journalctl -u ocserv --since "1 hour ago" --no-pager 2>/dev/null)
+        # Kunin ang active users gamit ang occtl json output para sa tamang mapping ng username at interface
+        occtl_json=$(occtl --json show users 2>/dev/null)
 
         for iface in $(ip -o link show 2>/dev/null | grep -oE 'vpns_[0-9]+'); do
             rx=$(cat /sys/class/net/$iface/statistics/rx_bytes 2>/dev/null || echo 0)
@@ -194,18 +194,15 @@ elif [[ $service == "openconnect" ]]; then
             current_time=$(date '+%Y-%m-%d %H:%M:%S')
             current_ts=$(date +%s)
             
-            # Hanapin sa journal logs kung aling username ang nakadikit sa interface o nag-login kamakailan
-            # Karaniwan sa ocserv log: "user 'username' connected..." o may kasamang device
-            actual_user=$(echo "$ocserv_logs" | grep -E "user.*logged in|accepted" | tail -n 1 | grep -oP "user '\K[^']+" || echo "")
+            # Hanapin ang actual username base sa device/interface mula sa occtl data gamit ang grep/sed
+            actual_user=$(echo "$occtl_json" | grep -B 5 "$iface" | grep -oP '"Username"\s*:\s*"\K[^"]+' | head -n 1)
             
-            if [ -z "$actual_user" ] || [ "$actual_user" = "unknown" ]; then
-                # Fallback: Subuking basahin mula sa huling kumonekta sa pamamagitan ng pids o iba pang log pattern
-                actual_user=$(echo "$ocserv_logs" | grep -E "Connection from" | tail -n 1 | awk '{print $NF}' || echo "$iface")
+            # Fallback kung sakaling hindi makuha sa occtl JSON
+            if [ -z "$actual_user" ]; then
+                actual_user=$(echo "$occtl_json" | grep -oP '"Username"\s*:\s*"\K[^"]+' | head -n 1)
             fi
             
-            # Kung wala pa rin, gamitin ang interface pero mas mainam na siguruhing may laman
             actual_user=${actual_user:-$iface}
-            
             user_ip=$(ip -4 addr show dev "$iface" 2>/dev/null | grep -oP 'inet \K[\d.]+' || echo "$ip")
             totalocserv=$((totalocserv + 1))
             
@@ -245,7 +242,6 @@ EOF
     echo "$output"
 
     mysql -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$ocserv', hysteria_status='$udphysteria', udp_status='$ocserv', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', squid='$squid_port', online='$totalocserv', hysteria_online='$totalocserv' WHERE server_ip='$ip'" 2>/dev/null
-
 elif [[ $service == "xray" ]]; then
     xray=$(systemctl is-active xray.service)
     nginx=$(systemctl is-active nginx)
