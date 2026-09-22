@@ -180,90 +180,24 @@ elif [[ $service == "openconnect" ]]; then
     [ -f /root/.ports ] && . /root/.ports
     [ -f /root/.db-base ] && . /root/.db-base
 
-    oc_socket=$(ls /var/run/ocserv-socket* 2>/dev/null | head -n 1)
-
     totalocserv=0
     if [ "$ocserv" = "active" ]; then
-        if [ -n "$oc_socket" ] && [ -S "$oc_socket" ]; then
-            # Gamitin ang python para basahin ang socket nang ligtas kahit may permission wrap, o direktang occtl json kung kaya
-            user_json=$(python3 -c "
-import socket, json
-s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-try:
-    s.connect('$oc_socket')
-    s.sendall(b'json show users\n')
-    data = b''
-    while True:
-        chunk = s.recv(4096)
-        if not chunk: break
-        data += chunk
-    print(data.decode('utf-8', errors='ignore'))
-except Exception as e:
-    print('[]')
-" 2>/dev/null)
+        # Subukan muna gamitin ang occtl para makuha ang eksaktong active user sessions
+        if command -v occtl &>/dev/null; then
+            totalocserv=$(occtl -n show users 2>/dev/null | grep -v "No users" | grep -v "Username" | grep -v "^[[:space:]]*$" | wc -l)
         fi
         
-        # Fallback kung python socket ay hindi umubra, subukan ang netstat/ss count
-        if [ -z "$user_json" ] || [ "$user_json" = "[]" ]; then
+        # Fallback check sa network connections kapag nag-0 ang occtl o may permission issue
+        if [ "$totalocserv" -eq 0 ]; then
             totalocserv=$(netstat -anp 2>/dev/null | grep -i "ocserv-main" | grep "ESTABLISHED" | wc -l)
-        else
-            totalocserv=$(echo "$user_json" | grep -o '"Username"' | wc -l)
+            if [ "$totalocserv" -eq 0 ]; then
+                totalocserv=$(ss -tuapn 2>/dev/null | grep -i "ocserv" | grep "ESTAB" | wc -l)
+            fi
         fi
     fi
 
+    # Siguraduhin na int lang ang laman ng variable
     [[ "$totalocserv" =~ ^[0-9]+$ ]] || totalocserv=0
-
-    # Pagpasok ng data sa bandwidth_logs gamit ang nakuha natin na JSON o active sessions
-    if [ "$ocserv" = "active" ] && [ -n "$user_json" ] && [ "$user_json" != "[]" ]; then
-        current_time=$(date '+%Y-%m-%d %H:%M:%S')
-        current_ts=$(date +%s)
-
-        # I-parse ang JSON gamit ang python para maiwasan ang maling string split
-        python3 - "$user_json" "$ip" "$tcp_port" "$current_time" "$current_ts" "$DB_USER" "$DB_PASS" "$DB_NAME" "$DB_HOST" << 'PY_EOF'
-import sys, json, subprocess
-
-raw_data = sys.argv[1]
-server_ip = sys.argv[2]
-server_port = sys.argv[3]
-current_time = sys.argv[4]
-current_ts = sys.argv[5]
-db_user = sys.argv[6]
-db_pass = sys.argv[7]
-db_name = sys.argv[8]
-db_host = sys.argv[9]
-
-try:
-    users = json.loads(raw_data)
-    if not isinstance(users, list):
-        users = [users]
-        
-    for u in users:
-        username = u.get('Username')
-        remote_ip = u.get('Remote IP', server_ip)
-        # Kunin ang RX at TX bytes nang direkta mula sa integer/string fields ng ocserv json
-        bytes_rx = int(u.get('RX', 0))
-        bytes_tx = int(u.get('TX', 0))
-        total_bandwidth = bytes_rx + bytes_tx
-        
-        if username:
-            sql = f"""
-            INSERT INTO bandwidth_logs 
-            (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) 
-            VALUES ('OpenConnect', '{server_ip}', '{server_port}', '{current_time}', '{username}', '{remote_ip}', {bytes_rx}, {bytes_tx}, {total_bandwidth}, '{current_time}', '{current_time}', '{current_time}', 'online', {current_ts}, 'premium') 
-            ON DUPLICATE KEY UPDATE 
-            bytes_received = {bytes_rx}, 
-            bytes_sent = {bytes_tx}, 
-            bandwidth = {total_bandwidth}, 
-            time = '{current_time}', 
-            status = 'online';
-            """
-            
-            cmd = ["mysql", "--skip-ssl", "-u", db_user, f"-p{db_pass}", "-D", db_name, "-h", db_host, "-e", sql]
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-except Exception as e:
-    pass
-PY_EOF
-    fi
 
     output=$(cat <<EOF
 {
@@ -289,6 +223,7 @@ EOF
     echo "$output"
 
     mysql -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$ocserv', hysteria_status='$udphysteria', udp_status='$ocserv', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', squid='$squid_port', online='$totalocserv', hysteria_online='$totalocserv' WHERE server_ip='$ip'"
+
 elif [[ $service == "xray" ]]; then
     xray=$(systemctl is-active xray.service)
     nginx=$(systemctl is-active nginx)
