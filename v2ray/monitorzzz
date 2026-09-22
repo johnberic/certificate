@@ -225,7 +225,9 @@ EOF
 
 else
     echo "[DEBUG] BABALA: Ang variable na service ay hindi 'openconnect'. Ang value nito ay: [$service]"
-
+  fi
+  
+  
 elif [[ $service == "xray" ]]; then
     xray=$(systemctl is-active xray.service)
     nginx=$(systemctl is-active nginx)
