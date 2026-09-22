@@ -16,13 +16,13 @@ if [[ $service == "ssh" ]]; then
     ssl=$(systemctl is-active stunnel4)
     socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
     
-    total_sshd=$(netstat -natp 2>/dev/null | awk "/$ip:22\y/ && /ESTABLISHED/ && /sshd/" | wc -l)
-    total_dropbear=$(netstat -natp 2>/dev/null | awk "/$ip:44\y/ && /ESTABLISHED/ && /dropbear/" | wc -l)
-    total_socket=$(netstat -natp 2>/dev/null | awk "/$ip:80\y/ && /ESTABLISHED/ && /python/" | wc -l)
-    total_ssl=$(netstat -natp 2>/dev/null | awk "/$ip:443\y/ && /ESTABLISHED/ && /stunnel4/" | wc -l)
+    total_sshd=$(netstat -natp | awk "/$ip:22\y/ && /ESTABLISHED/ && /sshd/" | wc -l)
+    total_dropbear=$(netstat -natp | awk "/$ip:44\y/ && /ESTABLISHED/ && /dropbear/" | wc -l)
+    total_socket=$(netstat -natp | awk "/$ip:80\y/ && /ESTABLISHED/ && /python/" | wc -l)
+    total_ssl=$(netstat -natp | awk "/$ip:443\y/ && /ESTABLISHED/ && /stunnel4/" | wc -l)
     totalssh=$((total_sshd + total_dropbear + total_socket + total_ssl))
     
-    [ -f /root/.ports ] && . /root/.ports
+    . /root/.ports
 
     output=$(cat <<EOF
 {
@@ -84,8 +84,8 @@ elif [[ $service == "socksip" ]]; then
     udpSERVER=$(systemctl is-active UDPserver)
     squid=$(systemctl is-active squid)
 
-    [ -f /root/.ports ] && . /root/.ports
-    [ -f /root/.db-base ] && . /root/.db-base
+    . /root/.ports
+    . /root/.db-base
 
     mysql -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', socksip_status='$udpSERVER', socksip_port='$socksip_port' WHERE server_ip='$ip'"
 
@@ -97,18 +97,18 @@ elif [[ $service == "openvpn" ]]; then
     ssl=$(systemctl is-active stunnel4)
     socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
     
-    tcpusers=$(sed -n -e '/^ROUTING_TABLE/p' /etc/openvpn/server/tcpclient.log 2>/dev/null | wc -l)
-    udpusers=$(sed -n -e '/^ROUTING_TABLE/p' /etc/openvpn/server/udpclient.log 2>/dev/null | wc -l)
+    tcpusers=$(sed -n -e '/^ROUTING_TABLE/p' /etc/openvpn/server/tcpclient.log | wc -l)
+    udpusers=$(sed -n -e '/^ROUTING_TABLE/p' /etc/openvpn/server/udpclient.log | wc -l)
     totalovpn=$((tcpusers + udpusers))
     
-    [ -f /root/.ports ] && . /root/.ports
+    . /root/.ports
     if [ "$udphysteria" = "active" ]; then
         total_hysteria=1
     else
         total_hysteria=0
     fi
     
-    [ -f /etc/openvpn/login/config.sh ] && . /etc/openvpn/login/config.sh
+    . /etc/openvpn/login/config.sh
 
     output=$(cat <<EOF
 {
@@ -147,26 +147,26 @@ elif [[ $service == "aio" ]]; then
     ssl=$(systemctl is-active stunnel4)
     socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
     
-    tcpusers=$(sed -n -e '/^ROUTING_TABLE/p' /etc/openvpn/server/tcpclient.log 2>/dev/null | wc -l)
-    udpusers=$(sed -n -e '/^ROUTING_TABLE/p' /etc/openvpn/server/udpclient.log 2>/dev/null | wc -l)
+    tcpusers=$(sed -n -e '/^ROUTING_TABLE/p' /etc/openvpn/server/tcpclient.log | wc -l)
+    udpusers=$(sed -n -e '/^ROUTING_TABLE/p' /etc/openvpn/server/udpclient.log | wc -l)
     totalovpn=$((tcpusers + udpusers))
     
-    total_sshd=$(netstat -natp 2>/dev/null | awk "/$ip:22/ && /ESTABLISHED/ && /sshd/" | wc -l)
-    total_dropbear=$(netstat -natp 2>/dev/null | awk "/$ip:441/ && /ESTABLISHED/ && /dropbear/" | wc -l)
-    total_socket1=$(netstat -natp 2>/dev/null | awk "/$ip:8000/ && /ESTABLISHED/ && /python/" | wc -l)
-    total_socket2=$(netstat -natp 2>/dev/null | awk "/$ip:8001/ && /ESTABLISHED/ && /python/" | wc -l)
-    total_socket3=$(netstat -natp 2>/dev/null | awk "/$ip:8002/ && /ESTABLISHED/ && /python/" | wc -l)
-    total_sshssl=$(netstat -natp 2>/dev/null | awk "/$ip:445/ && /ESTABLISHED/ && /stunnel4/" | wc -l)
+    total_sshd=$(netstat -natp | awk "/$ip:22/ && /ESTABLISHED/ && /sshd/" | wc -l)
+    total_dropbear=$(netstat -natp | awk "/$ip:441/ && /ESTABLISHED/ && /dropbear/" | wc -l)
+    total_socket1=$(netstat -natp | awk "/$ip:8000/ && /ESTABLISHED/ && /python/" | wc -l)
+    total_socket2=$(netstat -natp | awk "/$ip:8001/ && /ESTABLISHED/ && /python/" | wc -l)
+    total_socket3=$(netstat -natp | awk "/$ip:8002/ && /ESTABLISHED/ && /python/" | wc -l)
+    total_sshssl=$(netstat -natp | awk "/$ip:445/ && /ESTABLISHED/ && /stunnel4/" | wc -l)
     totalssh=$((total_sshd + total_dropbear + total_socket1 + total_socket2 + total_socket3 + total_sshssl))
     
-    [ -f /root/.ports ] && . /root/.ports
+    . /root/.ports
     if [ "$udphysteria" = "active" ]; then
         total_hysteria=1
     else
         total_hysteria=0
     fi
     
-    [ -f /etc/openvpn/login/config.sh ] && . /etc/openvpn/login/config.sh
+    . /etc/openvpn/login/config.sh
 
     mysql -u "$USER" -p"$PASS" -D "$DB" -h "$HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$tcpovpn', hysteria_status='$udphysteria', xray_status='$xray', ssh_online='$totalssh', slowdns_status='$slowdns', ssh_status='$sshd', dropbear_status='$dropbear', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', xray_port='$xray_port', slowdns_port='$slowdns_port', ssh_port='$ssh_port', dropbear_port='$dropbear_port', squid='$squid_port', socket_port='$socket_port', online='$totalovpn', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
 
@@ -183,7 +183,7 @@ elif [[ $service == "openconnect" ]]; then
     totalocserv=0
     if [ "$ocserv" = "active" ]; then
         if command -v occtl &>/dev/null; then
-            totalocserv=$(occtl -n show users 2>/dev/null | grep -v "No users" | grep -v "Username" | grep -v "^[[:space:]]*$" | wc -l)
+            totalocserv=$(occtl -s /var/run/ocserv-socket -n show users 2>/dev/null | grep -v "No users" | grep -v "Username" | grep -v "^[[:space:]]*$" | wc -l)
         fi
         
         if [ "$totalocserv" -eq 0 ]; then
@@ -196,34 +196,37 @@ elif [[ $service == "openconnect" ]]; then
 
     [[ "$totalocserv" =~ ^[0-9]+$ ]] || totalocserv=0
 
-    # I-reset muna ang status sa offline para sa mga logs ng openconnect kung kinakailangan o direktang i-update gamit ang ON DUPLICATE KEY
-    # Kunin ang active users gamit ang occtl json kung suportado, o parse ang normal output
+    # Kunin at i-update ang bandwidth ng active users gamit ang tamang socket
     if [ "$ocserv" = "active" ] && command -v occtl &>/dev/null; then
-        # Subukang kunin ang JSON data mula sa occtl kung meron
-        oc_json=$(occtl -j show users 2>/dev/null)
-        
-        # O kaya naman ay i-parse ang regular table output ng occtl show users
-        # Karaniwang format ng 'occtl show users': Username, Group, IP, TX, RX, Connected time
-        oc_users_list=$(occtl -n show users 2>/dev/null | grep -v "No users" | grep -v "Username" | grep -v "^[[:space:]]*$")
+        oc_users_list=$(occtl -s /var/run/ocserv-socket -n show users 2>/dev/null | grep -v "No users" | grep -v "Username" | grep -v "^[[:space:]]*$")
         
         if [ -n "$oc_users_list" ]; then
             current_time=$(date '+%Y-%m-%d %H:%M:%S')
             current_ts=$(date +%s)
             
             while IFS= read -r line; do
-                # Kunin ang mgadetalye depende sa spacing ng occtl output
                 user=$(echo "$line" | awk '{print $1}')
                 user_ip=$(echo "$line" | awk '{print $3}')
                 
-                # Default bytes kung hindi makuha nang diretso
-                bytes_rx=0
-                bytes_tx=0
-                
+                # Karaniwan sa occtl show users ay kasama ang RX at TX sa huling columns o pwede nating i-parse
+                # Kung sakaling gusto nating makuha ang detailed stats ng bawat user:
                 if [ -n "$user" ] && [ "$user" != "-" ]; then
                     user_ip=${user_ip:-$ip}
+                    
+                    # Pwede nating kunin ang bytes mula sa 'occtl -s /var/run/ocserv-socket show user <username>' kung kinakailangan ng detalyadong bytes
+                    user_details=$(occtl -s /var/run/ocserv-socket show user "$user" 2>/dev/null)
+                    bytes_rx=$(echo "$user_details" | grep -i "RX bytes:" | awk '{print $3}')
+                    bytes_tx=$(echo "$user_details" | grep -i "TX bytes:" | awk '{print $3}')
+                    
+                    bytes_rx=${bytes_rx:-0}
+                    bytes_tx=${bytes_tx:-0}
+                    
+                    [[ "$bytes_rx" =~ ^[0-9]+$ ]] || bytes_rx=0
+                    [[ "$bytes_tx" =~ ^[0-9]+$ ]] || bytes_tx=0
+                    
                     total_cycle_bandwidth=$((bytes_rx + bytes_tx))
                     
-                    sql_insert="INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) VALUES ('OpenConnect', '$ip', '$tcp_port', '$current_time', '$user', '$user_ip', '$bytes_rx', '$bytes_tx', '$total_cycle_bandwidth', '$current_time', '$current_time', '$current_time', 'online', '$current_ts', 'premium') ON DUPLICATE KEY UPDATE bytes_received = bytes_received + $bytes_rx, bytes_sent = bytes_sent + $bytes_tx, bandwidth = bandwidth + $total_cycle_bandwidth, time='$current_time', status='online';"
+                    sql_insert="INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) VALUES ('OpenConnect', '$ip', '$tcp_port', '$current_time', '$user', '$user_ip', '$bytes_rx', '$bytes_tx', '$total_cycle_bandwidth', '$current_time', '$current_time', '$current_time', 'online', '$current_ts', 'premium') ON DUPLICATE KEY UPDATE bytes_received = $bytes_rx, bytes_sent = $bytes_tx, bandwidth = $total_cycle_bandwidth, time='$current_time', status='online';"
                     
                     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "$sql_insert" 2>/dev/null
                 fi
@@ -256,8 +259,7 @@ EOF
 
     mysql -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$ocserv', hysteria_status='$udphysteria', udp_status='$ocserv', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', squid='$squid_port', online='$totalocserv', hysteria_online='$totalocserv' WHERE server_ip='$ip'"
 
-
-elif [[ $service == "xray" ]]; then
+ elif [[ $service == "xray" ]]; then
     xray=$(systemctl is-active xray.service)
     nginx=$(systemctl is-active nginx)
     squid=$(systemctl is-active squid)
@@ -266,7 +268,7 @@ elif [[ $service == "xray" ]]; then
     [ -f /etc/xray/.db-base ] && . /etc/xray/.db-base
 
     x_port=${xray_port:-10001}
-    total_xray=$(ss -tnp 2>/dev/null | grep 'xray' | grep ":$x_port" | grep ESTAB | awk '{print $5}' | cut -d: -f1 | sort -u | wc -l)
+    total_xray=$(ss -tnp | grep 'xray' | grep ":$x_port" | grep ESTAB | awk '{print $5}' | cut -d: -f1 | sort -u | wc -l)
     XRAY_BIN=$(which xray 2>/dev/null || echo "/usr/local/bin/xray")
 
     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE users SET is_connected = 0, login_status = 'offline'" 2>/dev/null
