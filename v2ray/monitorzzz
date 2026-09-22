@@ -180,8 +180,11 @@ elif [[ $service == "openconnect" ]]; then
     [ -f /root/.ports ] && . /root/.ports
     [ -f /root/.db-base ] && . /root/.db-base
 
-    if [ "$ocserv" = "active" ]; then
-        totalocserv=1
+    if systemctl is-active --quiet ocserv; then
+        totalocserv=$(occtl -j show users 2>/dev/null | grep -o '"Username"' | wc -l)
+        if [ "$totalocserv" -eq 0 ]; then
+            totalocserv=$(netstat -an | grep -E ":1194|:443" | grep ESTABLISHED | grep -i "ocserv" | wc -l)
+        fi
     else
         totalocserv=0
     fi
