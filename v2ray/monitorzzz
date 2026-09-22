@@ -78,7 +78,7 @@ elif [[ $service == "hysteria" ]]; then
 EOF
 )
 
-    mysql -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', hysteria_status='$udphysteria', squid_status='$squid', hysteria_port='$hysteria_port', squid='$squid_port', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
+    mysql -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', hysteria_status='$udphysteria', squid_status='$squid', hysteria_port='$hysteria_port', squid='$squid_port', online='$total_hysteria', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
 
 elif [[ $service == "socksip" ]]; then
     udpSERVER=$(systemctl is-active UDPserver)
@@ -180,13 +180,7 @@ elif [[ $service == "openconnect" ]]; then
     [ -f /root/.ports ] && . /root/.ports
     [ -f /root/.db-base ] && . /root/.db-base
 
-    if systemctl is-active --quiet ocserv; then
-        raw_ocserv=$(netstat -an | grep -E ":1194|:443" | grep ESTABLISHED | grep -i "ocserv" | wc -l)
-    else
-        raw_ocserv=0
-    fi
-
-    if [ "$raw_ocserv" -gt 0 ]; then
+    if [ "$ocserv" = "active" ]; then
         totalocserv=1
     else
         totalocserv=0
