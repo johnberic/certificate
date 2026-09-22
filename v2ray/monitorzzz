@@ -51,13 +51,10 @@ elif [[ $service == "hysteria" ]]; then
     udphysteria=$(systemctl is-active hysteria-server.service)
     squid=$(systemctl is-active squid)
     
-    . /root/.ports
-    . /root/.db-base
+    [ -f /root/.ports ] && . /root/.ports
+    [ -f /root/.db-base ] && . /root/.db-base
 
-    h_port=${hysteria_port:-53}
-    raw_hysteria=$(ss -tulnp | grep -E "hysteria" | grep -i ":$h_port" | wc -l)
-    
-    if [ "$raw_hysteria" -gt 0 ]; then
+    if [ "$udphysteria" = "active" ]; then
         total_hysteria=1
     else
         total_hysteria=0
@@ -105,9 +102,7 @@ elif [[ $service == "openvpn" ]]; then
     totalovpn=$((tcpusers + udpusers))
     
     . /root/.ports
-    h_port=${hysteria_port:-53}
-    raw_hysteria=$(ss -tulnp | grep -E "hysteria" | grep -i ":$h_port" | wc -l)
-    if [ "$raw_hysteria" -gt 0 ]; then
+    if [ "$udphysteria" = "active" ]; then
         total_hysteria=1
     else
         total_hysteria=0
@@ -165,9 +160,7 @@ elif [[ $service == "aio" ]]; then
     totalssh=$((total_sshd + total_dropbear + total_socket1 + total_socket2 + total_socket3 + total_sshssl))
     
     . /root/.ports
-    h_port=${hysteria_port:-53}
-    raw_hysteria=$(ss -tulnp | grep -E "hysteria" | grep -i ":$h_port" | wc -l)
-    if [ "$raw_hysteria" -gt 0 ]; then
+    if [ "$udphysteria" = "active" ]; then
         total_hysteria=1
     else
         total_hysteria=0
@@ -187,17 +180,19 @@ elif [[ $service == "openconnect" ]]; then
     [ -f /root/.ports ] && . /root/.ports
     [ -f /root/.db-base ] && . /root/.db-base
 
-    raw_ocserv=$(netstat -an | grep -E ":1194|:443" | grep ESTABLISHED | grep -i "ocserv" | wc -l)
-    h_port=${hysteria_port:-53}
-    raw_hysteria=$(ss -tulnp | grep -E "hysteria" | grep -i ":$h_port" | wc -l)
-    
+    if systemctl is-active --quiet ocserv; then
+        raw_ocserv=$(netstat -an | grep -E ":1194|:443" | grep ESTABLISHED | grep -i "ocserv" | wc -l)
+    else
+        raw_ocserv=0
+    fi
+
     if [ "$raw_ocserv" -gt 0 ]; then
         totalocserv=1
     else
         totalocserv=0
     fi
 
-    if [ "$raw_hysteria" -gt 0 ]; then
+    if [ "$udphysteria" = "active" ]; then
         total_hysteria=1
     else
         total_hysteria=0
