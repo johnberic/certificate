@@ -233,7 +233,7 @@ elif [[ $service == "xray" ]]; then
     x_port=${xray_port:-10001}
     total_xray=$(ss -tnp | grep 'xray' | grep ":$x_port" | grep ESTAB | awk '{print $5}' | cut -d: -f1 | sort -u | wc -l)
 
-    # 1. I-reset muna silang lahat sa offline (0) sa simula
+    # 1. I-reset muna silang lahat sa offline (0) at i-reset din ang stats kung kinakailangan
     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE users SET is_connected = 0, login_status = 'offline'" 2>/dev/null
     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "DELETE FROM xray_online WHERE server_ip='$ip'" 2>/dev/null
 
@@ -248,20 +248,23 @@ elif [[ $service == "xray" ]]; then
                     # 2. I-insert sa xray_online
                     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "INSERT IGNORE INTO xray_online (username, server_ip) VALUES ('$user', '$ip')" 2>/dev/null
                     
-                    # 3. Gawing 1 ang is_connected para sa user na ito
-                    mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE users SET is_connected = 1, login_status = 'online' WHERE user_name = '$user'" 2>/dev/null
+                    # 3. Kunin ang upload at download bytes gamit ang Xray API Stats (Port 10000)
+                    up_bytes=$(xray api statsquery --server=127.0.0.1:10000 -name "user>>>$user>>>traffic>>>uplink" 2>/dev/null | grep -o '"value": [0-9]*' | awk '{print $2}')
+                    down_bytes=$(xray api statsquery --server=127.0.0.1:10000 -name "user>>>$user>>>traffic>>>downlink" 2>/dev/null | grep -o '"value": [0-9]*' | awk '{print $2}')
                     
-                    # (Optional) Kung gusto mong i-sum ang bytes mula sa log kung kasama ito sa format mo:
-                    # user_bytes=$(grep "$user" "$log_file" | tail -n 100 | awk '{...sumahin ang bytes...}')
-                    # mysql ... -e "UPDATE users SET usage = usage + $user_bytes WHERE user_name = '$user'"
+                    # Kung walang nakuha, gawing 0
+                    up_bytes=${up_bytes:-0}
+                    down_bytes=${down_bytes:-0}
+                    
+                    # 4. I-update ang is_connected, login_status, xray_upload, at xray_download sa users table
+                    mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE users SET is_connected = 1, login_status = 'online', xray_upload = xray_upload + $up_bytes, xray_download = xray_download + $down_bytes WHERE user_name = '$user'" 2>/dev/null
                 fi
             done
         fi
     fi
 
-    # 4. I-update ang server status
+    # 5. I-update ang server status
     mysql -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', xray_tls='$xray_tls', xray_ntls='$xray_ntls', xray_status='$xray', squid_status='$squid', squid='$squid_port', xray_vmess='$vmess', xray_vless='$vless', xray_trojan='$trojan', xray_ss='$ss', xray_online='$total_xray' WHERE server_ip='$ip'"
-
 
 
 elif [[ $service == "pptp" ]]; then
