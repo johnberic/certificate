@@ -162,35 +162,47 @@ elif [[ $service == "openconnect" ]]; then
     ssl=$(systemctl is-active stunnel4)
     socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
     
-   
-    . /root/.db-base
+    # Siguraduhing basahin ang ports at db-base kung meron
+    [ -f /root/.ports ] && . /root/.ports
+    [ -f /root/.db-base ] && . /root/.db-base
 
-    oc_json=$(occtl -j show users 2>/dev/null)
-    totalocserv=$(echo "$oc_json" | jq ". | length" 2>/dev/null)
+    # Kunin ang JSON mula sa occtl (gumamit ng sapat na path kung kinakailangan)
+    oc_json=$(occtl -j show users 2>/dev/null || sudo occtl -j show users 2>/dev/null)
+    
+    # I-check kung valid JSON at kunin ang total count
+    if [ -n "$oc_json" ] && echo "$oc_json" | jq empty 2>/dev/null; then
+        totalocserv=$(echo "$oc_json" | jq '. | length' 2>/dev/null)
+    else
+        totalocserv=0
+    fi
     totalocserv=${totalocserv:-0}
+    
     total_hysteria=$(netstat -natp | awk "/$ip:53/ && /ESTABLISHED/ && /hysteria/" | wc -l)
 
-    mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE users SET is_connected = 0, login_status = 'offline' WHERE protocol = 'openconnect'" 2>/dev/null
+    # I-reset muna ang status sa database kung may database connection ka man
+    if [ -n "$DB_NAME" ]; then
+        mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE users SET is_connected = 0, login_status = 'offline' WHERE protocol = 'openconnect'" 2>/dev/null
 
-    if [ "$totalocserv" -gt 0 ]; then
-        active_users=$(echo "$oc_json" | jq -r '.[].Username' 2>/dev/null)
-        if [ -n "$active_users" ]; then
-            tmp_users="/tmp/openconnect_active_users.txt"
-            > "$tmp_users"
-            for user in $active_users; do
-                if [ -n "$user" ] && [ "$user" != "null" ]; then
-                    echo "'$user'" >> "$tmp_users"
+        if [ "$totalocserv" -gt 0 ]; then
+            active_users=$(echo "$oc_json" | jq -r '.[].Username' 2>/dev/null)
+            if [ -n "$active_users" ]; then
+                tmp_users="/tmp/openconnect_active_users.txt"
+                > "$tmp_users"
+                for user in $active_users; do
+                    if [ -n "$user" ] && [ "$user" != "null" ]; then
+                        echo "'$user'" >> "$tmp_users"
+                    fi
+                done
+                if [ -s "$tmp_users" ]; then
+                    users_list=$(paste -sd, "$tmp_users")
+                    mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE users SET is_connected = 1, login_status = 'online' WHERE username IN ($users_list)" 2>/dev/null
                 fi
-            done
-            if [ -s "$tmp_users" ]; then
-                users_list=$(paste -sd, "$tmp_users")
-                mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE users SET is_connected = 1, login_status = 'online' WHERE username IN ($users_list)" 2>/dev/null
+                rm -f "$tmp_users"
             fi
-            rm -f "$tmp_users"
         fi
-    fi
 
-    mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', hysteria_status='$udphysteria', udp_status='$ocserv', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', hysteria_port='$hysteria_port', squid='$squid_port', socket='$socket_port', online='$totalocserv', hysteria_online='$total_hysteria' WHERE server_ip='$ip'" 2>/dev/null
+        mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', hysteria_status='$udphysteria', udp_status='$ocserv', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', hysteria_port='$hysteria_port', squid='$squid_port', socket='$socket_port', online='$totalocserv', hysteria_online='$total_hysteria' WHERE server_ip='$ip'" 2>/dev/null
+    fi
 
     output=$(cat <<EOF
 {
@@ -204,11 +216,11 @@ elif [[ $service == "openconnect" ]]; then
  "memory": "$memory",
  "disk": "$disk",
  "uptime": "$uptime",
- "udp_hysteria": "$hysteria_port - $udphysteria",
- "socket_port": "$socket_port - $socket",
- "squid_port": "$squid_port - $squid",
- "tcp_ssl_port": "$tcp_ssl_port - $ssl",
- "udp_ssl_port": "$udp_ssl_port - $ssl"
+ "udp_hysteria": "${hysteria_port:-none} - $udphysteria",
+ "socket_port": "${socket_port:-80} - $socket",
+ "squid_port": "${squid_port:-3128} - $squid",
+ "tcp_ssl_port": "${tcp_ssl_port:-443} - $ssl",
+ "udp_ssl_port": "${udp_ssl_port:-443} - $ssl"
 }
 EOF
 )
