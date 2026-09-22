@@ -233,12 +233,13 @@ elif [[ $service == "xray" ]]; then
     x_port=${xray_port:-10001}
     total_xray=$(ss -tnp | grep 'xray' | grep ":$x_port" | grep ESTAB | awk '{print $5}' | cut -d: -f1 | sort -u | wc -l)
 
-    # 1. Linisin muna ang xray_online para sa server na ito sa simula
-    mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "DELETE FROM xray_online WHERE server_ip='$ip'" 2>/dev/null
+    # Linisin muna ang xray_online para sa server na ito
+    mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "DELETE FROM xray_online WHERE server_ip='$ip'"
 
     log_file="/var/log/xray/access.log"
-    if [ -f "$log_file" ] && [ "$total_xray" -gt 0 ]; then
-        active_users=$(tail -n 500 "$log_file" | grep "accepted" | awk -F'email: ' '{print $2}' | awk '{print $1}' | sort -u)
+    if [ -f "$log_file" ]; then
+        # Pinalawak natin ang parsing para masigurong masalo ang iba't ibang Xray access log format
+        active_users=$(tail -n 300 "$log_file" | grep -E "accepted|to" | grep -oE 'email: [^[:space:]]+' | awk '{print $2}' | tr -d '"'\'' ' | sort -u)
         
         if [ -n "$active_users" ]; then
             tmp_users="/tmp/xray_active_users.txt"
@@ -251,27 +252,29 @@ elif [[ $service == "xray" ]]; then
             done
             
             if [ -s "$tmp_users" ]; then
-                # 2. I-insert ang mga active users sa xray_online table
                 values_str=$(paste -sd, "$tmp_users")
-                mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "INSERT IGNORE INTO xray_online (username, server_ip) VALUES $values_str" 2>/dev/null
+                # I-insert sa xray_online
+                mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "INSERT IGNORE INTO xray_online (username, server_ip) VALUES $values_str"
             fi
-            
             rm -f "$tmp_users"
         fi
     fi
 
-    # 3. I-reset muna ang lahat sa 0 / offline, pagkatapos ay i-update ng 1 ang mga nasa xray_online gamit ang JOIN
+    # I-reset muna sa 0 ang lahat, tapos i-update ang mga nasa xray_online table gamit ang INNER/LEFT JOIN
     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "
         UPDATE users SET is_connected = 0, login_status = 'offline';
         
         UPDATE users u
-        JOIN xray_online x ON u.user_name = x.username
+        JOIN xray_online x ON TRIM(u.user_name) = TRIM(x.username)
         SET u.is_connected = 1, u.login_status = 'online'
         WHERE x.server_ip = '$ip';
-    " 2>/dev/null
+    "
 
-    # 4. I-update ang server status kasama ang kabuuang total ng xray online
+    # I-update ang server status
     mysql -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', xray_tls='$xray_tls', xray_ntls='$xray_ntls', xray_status='$xray', squid_status='$squid', squid='$squid_port', xray_vmess='$vmess', xray_vless='$vless', xray_trojan='$trojan', xray_ss='$ss', xray_online='$total_xray' WHERE server_ip='$ip'"
+
+
+
 
 elif [[ $service == "pptp" ]]; then
     pptpd=$(systemctl is-active pptpd)
