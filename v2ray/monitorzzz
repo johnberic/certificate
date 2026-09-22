@@ -237,6 +237,7 @@ elif [[ $service == "xray" ]]; then
     x_port=${xray_port:-10001}
     total_xray=$(netstat -natp | grep xray | grep ":$x_port" | grep ESTABLISHED | awk '{print $4}' | cut -d: -f2 | sort -u | wc -l)
 
+    # Dito sine-set sa 0 (offline) ang lahat bago i-check ang active users
     mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE users SET is_connected = 0, login_status = 'offline'" 2>/dev/null
     mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "DELETE FROM xray_online WHERE server_ip='$ip'" 2>/dev/null
     
@@ -259,6 +260,7 @@ elif [[ $service == "xray" ]]; then
                 mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "INSERT IGNORE INTO xray_online (username, server_ip) VALUES $values_str" 2>/dev/null
                 
                 users_list=$(awk -F"'" '{print "'\''" $2 "'\''"}' "$tmp_users" | paste -sd,)
+                # Kapag aktibo, saka lang gagawing 1 (online)
                 mysql --skip-ssl -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE users SET is_connected = 1, login_status = 'online' WHERE user_name IN ($users_list)" 2>/dev/null
             fi
             
@@ -266,14 +268,14 @@ elif [[ $service == "xray" ]]; then
         fi
     fi
 
-    # Mag-set ng 1 kung may online user o active connections, 0 kung wala
+    # Magbibigay ng 0 kung walang active connections, 1 kung meron
     online_flag=0
     if [ "$total_xray" -gt 0 ]; then
         online_flag=1
     fi
 
     mysql -u $DB_USER -p$DB_PASS -D $DB_NAME -h $DB_HOST -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', xray_tls='$xray_tls', xray_ntls='$xray_ntls', xray_status='$xray', squid_status='$squid', squid='$squid_port', xray_vmess='$vmess', xray_vless='$vless', xray_trojan='$trojan', xray_ss='$ss', xray_online='$total_xray', xray_online_status='$online_flag' WHERE server_ip='$ip'"
-
+fi
 elif [[ $service == "pptp" ]]; then
     pptpd=$(systemctl is-active pptpd)
 
