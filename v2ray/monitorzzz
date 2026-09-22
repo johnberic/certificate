@@ -238,7 +238,6 @@ elif [[ $service == "xray" ]]; then
     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "DELETE FROM xray_online WHERE server_ip='$ip'" 2>/dev/null
 
     log_file="/var/log/xray/access.log"
-    # Babasahin lamang natin ang log kung may active connections talaga (total_xray > 0)
     if [ -f "$log_file" ] && [ "$total_xray" -gt 0 ]; then
         active_users=$(tail -n 500 "$log_file" | grep "accepted" | awk -F'email: ' '{print $2}' | awk '{print $1}' | sort -u)
         
@@ -262,19 +261,12 @@ elif [[ $service == "xray" ]]; then
         fi
     fi
 
-    # 3. Kunan ang eksaktong listahan ng mga nasa xray_online para sa server na ito, 
-    # at gawing online (1) sila sa users table. Kung walang laman ang xray_online, 
-    # walang magiging 1 sa users table kaya sabay silang iisa ang value.
+    # 3. Gamitin ang INNER JOIN / LEFT JOIN para tiyakin na kung sino ang pumasok sa xray_online ay Siyang-siya ring magiging 1 sa users
     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "
-        UPDATE users 
-        SET is_connected = CASE 
-            WHEN user_name IN (SELECT username FROM xray_online WHERE server_ip='$ip') THEN 1 
-            ELSE 0 
-        END,
-        login_status = CASE 
-            WHEN user_name IN (SELECT username FROM xray_online WHERE server_ip='$ip') THEN 'online' 
-            ELSE 'offline' 
-        END;
+        UPDATE users u
+        LEFT JOIN xray_online x ON u.user_name = x.username AND x.server_ip = '$ip'
+        SET u.is_connected = IF(x.username IS NOT NULL, 1, 0),
+            u.login_status = IF(x.username IS NOT NULL, 'online', 'offline');
     " 2>/dev/null
 
     # 4. I-update ang server status kasama ang kabuuang total ng xray online
