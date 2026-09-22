@@ -227,13 +227,17 @@ elif [[ $service == "xray" ]]; then
     nginx=$(systemctl is-active nginx)
     squid=$(systemctl is-active squid)
 
-    . /root/.ports
-    . /etc/xray/.db-base
+    # Siguruhing mababasa ang mga config kahit nasa cron environment
+    [ -f /root/.ports ] && . /root/.ports
+    [ -f /etc/xray/.db-base ] && . /etc/xray/.db-base
 
     x_port=${xray_port:-10001}
     total_xray=$(ss -tnp | grep 'xray' | grep ":$x_port" | grep ESTAB | awk '{print $5}' | cut -d: -f1 | sort -u | wc -l)
 
-    # 1. I-reset muna ang is_connected status sa users table sa simula
+    # Hanapin ang tamang path ng xray binary para sa cron
+    XRAY_BIN=$(which xray 2>/dev/null || echo "/usr/local/bin/xray")
+
+    # 1. I-reset muna ang is_connected status sa users table sa unahan
     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE users SET is_connected = 0, login_status = 'offline'" 2>/dev/null
 
     log_file="/var/log/xray/access.log"
@@ -242,18 +246,18 @@ elif [[ $service == "xray" ]]; then
         active_users=$(echo "$recent_logs" | grep -oE 'email: [^[:space:]]+' | awk '{print $2}' | tr -d '"'\'' ' | sort -u)
         
         if [ -n "$active_users" ]; then
-            all_stats=$(xray api statsquery --server=127.0.0.1:10000 -pattern "" -reset=false 2>/dev/null)
+            # Kunin ang stats gamit ang absolute path ng xray binary
+            all_stats=$($XRAY_BIN api statsquery --server=127.0.0.1:10000 -pattern "" -reset=false 2>/dev/null)
 
             for user in $active_users; do
                 if [ -n "$user" ] && [ "$user" != "-" ]; then
                     user_ip=$(echo "$recent_logs" | grep "email: $user" | tail -n 1 | grep -oE 'from [0-9.]+' | awk '{print $2}')
                     user_ip=${user_ip:-$ip}
 
-                    # 2. Tuwirang pagkuha ng value gamit ang grep -A 1 sa eksaktong user key
+                    # 2. Kunin ang current bytes mula sa stats
                     current_up=$(echo "$all_stats" | grep -F "user>>>$user>>>traffic>>>uplink" -A 1 | grep '"value":' | head -n 1 | grep -o '[0-9]*')
                     current_down=$(echo "$all_stats" | grep -F "user>>>$user>>>traffic>>>downlink" -A 1 | grep '"value":' | head -n 1 | grep -o '[0-9]*')
                     
-                    # Fallback kung sakaling blangko
                     current_up=${current_up:-0}
                     current_down=${current_down:-0}
                     
@@ -265,7 +269,7 @@ elif [[ $service == "xray" ]]; then
                     current_time=$(date '+%Y-%m-%d %H:%M:%S')
                     current_ts=$(date +%s)
 
-                    # 3. I-insert o i-update sa bandwidth_logs na may cumulative total
+                    # 3. I-insert o i-update sa bandwidth_logs (Cumulative total addition)
                     sql_insert="INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) VALUES ('Xray', '$ip', '$x_port', '$current_time', '$user', '$user_ip', '$current_down', '$current_up', '$total_cycle_bandwidth', '$current_time', '$current_time', '$current_time', 'online', '$current_ts', 'premium') ON DUPLICATE KEY UPDATE bytes_received = bytes_received + $current_down, bytes_sent = bytes_sent + $current_up, bandwidth = bandwidth + $total_cycle_bandwidth, time='$current_time', status='online';"
                     
                     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "$sql_insert" 2>/dev/null
