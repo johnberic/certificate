@@ -181,12 +181,12 @@ elif [[ $service == "openconnect" ]]; then
     [ -f /root/.db-base ] && . /root/.db-base
 
     totalocserv=0
-
     if [ "$ocserv" = "active" ]; then
         if command -v occtl &>/dev/null; then
             ocserv_out=$(occtl -n show users 2>/dev/null)
             totalocserv=$(echo "$ocserv_out" | grep -v "No users" | grep -v "Username" | grep -v "^[[:space:]]*$" | wc -l)
             
+            # Idinagdag ito para makuha ang bytes at ipasok sa bandwidth_logs nang hindi binabago ang occtl logic mo
             if [ "$totalocserv" -gt 0 ]; then
                 echo "$ocserv_out" | tail -n +3 | while read -r line; do
                     [ -z "$line" ] && continue
@@ -212,6 +212,9 @@ elif [[ $service == "openconnect" ]]; then
         
         if [ "$totalocserv" -eq 0 ]; then
             totalocserv=$(netstat -anp 2>/dev/null | grep -i "ocserv-main" | grep "ESTABLISHED" | wc -l)
+            if [ "$totalocserv" -eq 0 ]; then
+                totalocserv=$(ss -tuapn 2>/dev/null | grep -i "ocserv" | grep "ESTAB" | wc -l)
+            fi
         fi
     fi
 
@@ -241,6 +244,7 @@ EOF
     echo "$output"
 
     mysql -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$ocserv', hysteria_status='$udphysteria', udp_status='$ocserv', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', squid='$squid_port', online='$totalocserv', hysteria_online='$totalocserv' WHERE server_ip='$ip'"
+
 elif [[ $service == "xray" ]]; then
     xray=$(systemctl is-active xray.service)
     nginx=$(systemctl is-active nginx)
