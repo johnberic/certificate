@@ -182,52 +182,31 @@ elif [[ $service == "openconnect" ]]; then
 
     totalocserv=0
 
-    # I-set muna sa offline ang mga dating online para sa server na ito
-    mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE bandwidth_logs SET status='offline' WHERE server='OpenConnect' AND server_ip='$ip'" 2>/dev/null
-
     if [ "$ocserv" = "active" ]; then
         if command -v occtl &>/dev/null; then
-            ocserv_json=$(occtl -j show users 2>/dev/null)
-            totalocserv=$(echo "$ocserv_json" | grep -o '"Username"' | wc -l)
+            ocserv_out=$(occtl -n show users 2>/dev/null)
+            totalocserv=$(echo "$ocserv_out" | grep -v "No users" | grep -v "Username" | grep -v "^[[:space:]]*$" | wc -l)
             
-            if [ "$totalocserv" -gt 0 ] && command -v python3 &>/dev/null; then
-                python3 - "$ocserv_json" "$ip" "$DB_USER" "$DB_PASS" "$DB_NAME" "$DB_HOST" << 'EOF'
-import sys
-import json
-import subprocess
-import datetime
-
-try:
-    data = json.loads(sys.argv[1])
-    server_ip = sys.argv[2]
-    db_user = sys.argv[3]
-    db_pass = sys.argv[4]
-    db_name = sys.argv[5]
-    db_host = sys.argv[6]
-
-    users_list = data if isinstance(data, list) else data.get('users', [])
-    
-    for u in users_list:
-        username = u.get('Username', 'unknown')
-        remote_ip = u.get('Remote IP', server_ip)
-        rx_bytes = int(u.get('Bytes Received', 0))
-        tx_bytes = int(u.get('Bytes Sent', 0))
-        total_bw = rx_bytes + tx_bytes
-        
-        current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        current_ts = int(datetime.datetime.now().timestamp())
-        
-        sql = f"""
-        INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) 
-        VALUES ('OpenConnect', '{server_ip}', '443', '{current_time}', '{username}', '{remote_ip}', '{rx_bytes}', '{tx_bytes}', {total_bw}, '{current_time}', '{current_time}', '{current_time}', 'online', {current_ts}, 'premium') 
-        ON DUPLICATE KEY UPDATE bytes_received = '{rx_bytes}', bytes_sent = '{tx_bytes}', bandwidth = bandwidth + {total_bw}, time='{current_time}', status='online';
-        """
-        
-        cmd = ["mysql", "--skip-ssl", "-u", db_user, "-p" + db_pass, "-D", db_name, "-h", db_host, "-e", sql]
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-except Exception as e:
-    pass
-EOF
+            if [ "$totalocserv" -gt 0 ]; then
+                echo "$ocserv_out" | tail -n +3 | while read -r line; do
+                    [ -z "$line" ] && continue
+                    username=$(echo "$line" | awk '{print $1}')
+                    remote_ip=$(echo "$line" | awk '{print $2}')
+                    rx_bytes=$(echo "$line" | awk '{print $4}')
+                    tx_bytes=$(echo "$line" | awk '{print $5}')
+                    
+                    rx_bytes=${rx_bytes:-0}
+                    tx_bytes=${tx_bytes:-0}
+                    [[ "$rx_bytes" =~ ^[0-9]+$ ]] || rx_bytes=0
+                    [[ "$tx_bytes" =~ ^[0-9]+$ ]] || tx_bytes=0
+                    total_bw=$((rx_bytes + tx_bytes))
+                    
+                    current_time=$(date '+%Y-%m-%d %H:%M:%S')
+                    current_ts=$(date +%s)
+                    
+                    [ -n "$username" ] && [ "$username" != "No" ] && \
+                    mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) VALUES ('OpenConnect', '$ip', '443', '$current_time', '$username', '$remote_ip', '$rx_bytes', '$tx_bytes', '$total_bw', '$current_time', '$current_time', '$current_time', 'online', '$current_ts', 'premium') ON DUPLICATE KEY UPDATE bytes_received = '$rx_bytes', bytes_sent = '$tx_bytes', bandwidth = '$total_bw', time='$current_time', status='online';" 2>/dev/null
+                done
             fi
         fi
         
@@ -262,7 +241,6 @@ EOF
     echo "$output"
 
     mysql -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$ocserv', hysteria_status='$udphysteria', udp_status='$ocserv', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', squid='$squid_port', online='$totalocserv', hysteria_online='$totalocserv' WHERE server_ip='$ip'"
-
 elif [[ $service == "xray" ]]; then
     xray=$(systemctl is-active xray.service)
     nginx=$(systemctl is-active nginx)
