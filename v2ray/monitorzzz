@@ -77,6 +77,7 @@ elif [[ $service == "hysteria" ]]; then
 }
 EOF
 )
+    echo "$output"
 
     mysql -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', hysteria_status='$udphysteria', squid_status='$squid', hysteria_port='$hysteria_port', squid='$squid_port', online='$total_hysteria', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
 
@@ -132,6 +133,7 @@ elif [[ $service == "openvpn" ]]; then
 }
 EOF
 )
+    echo "$output"
 
     mysql -u "$USER" -p"$PASS" -D "$DB" -h "$HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$tcpovpn', hysteria_status='$udphysteria', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', squid='$squid_port', socket_port='$socket_port', online='$totalovpn', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
 
@@ -183,7 +185,6 @@ elif [[ $service == "openconnect" ]]; then
     totalocserv=0
 
     if [ "$ocserv" = "active" ]; then
-        # I-loop ang bawat active vpns interface ng openconnect para makuha ang bytes per user/interface
         for iface in $(ip -o link show 2>/dev/null | grep -oE 'vpns_[0-9]+'); do
             rx=$(cat /sys/class/net/$iface/statistics/rx_bytes 2>/dev/null || echo 0)
             tx=$(cat /sys/class/net/$iface/statistics/tx_bytes 2>/dev/null || echo 0)
@@ -192,13 +193,16 @@ elif [[ $service == "openconnect" ]]; then
             current_time=$(date '+%Y-%m-%d %H:%M:%S')
             current_ts=$(date +%s)
             
-            # Kunin ang IP address na naka-assign sa interface
-            user_ip=$(ip -4 addr show dev "$iface" 2>/dev/null | grep -oP 'inet \K[\d.]+' || echo "$ip")
+            if [ -f "/etc/ocserv/sessions/$iface" ]; then
+                actual_user=$(cat "/etc/ocserv/sessions/$iface")
+            else
+                actual_user="unknown"
+            fi
             
+            user_ip=$(ip -4 addr show dev "$iface" 2>/dev/null | grep -oP 'inet \K[\d.]+' || echo "$ip")
             totalocserv=$((totalocserv + 1))
             
-            # SQL Insert/Update para sa bandwidth_logs table mo
-            sql_insert="INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) VALUES ('OpenConnect', '$ip', '443', '$current_time', '$iface', '$user_ip', '$rx', '$tx', '$total_cycle_bandwidth', '$current_time', '$current_time', '$current_time', 'online', '$current_ts', 'premium') ON DUPLICATE KEY UPDATE bytes_received = $rx, bytes_sent = $tx, bandwidth = $total_cycle_bandwidth, time='$current_time', status='online';"
+            sql_insert="INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) VALUES ('OpenConnect', '$ip', '443', '$current_time', '$actual_user', '$user_ip', '$rx', '$tx', '$total_cycle_bandwidth', '$current_time', '$current_time', '$current_time', 'online', '$current_ts', 'premium') ON DUPLICATE KEY UPDATE bytes_received = $rx, bytes_sent = $tx, bandwidth = $total_cycle_bandwidth, time='$current_time', status='online';"
             
             mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "$sql_insert" 2>/dev/null
         done
@@ -234,6 +238,7 @@ EOF
     echo "$output"
 
     mysql -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$ocserv', hysteria_status='$udphysteria', udp_status='$ocserv', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', squid='$squid_port', online='$totalocserv', hysteria_online='$totalocserv' WHERE server_ip='$ip'" 2>/dev/null
+
 elif [[ $service == "xray" ]]; then
     xray=$(systemctl is-active xray.service)
     nginx=$(systemctl is-active nginx)
