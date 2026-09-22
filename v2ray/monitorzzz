@@ -162,7 +162,7 @@ elif [[ $service == "openconnect" ]]; then
     ssl=$(systemctl is-active stunnel4)
     socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
     
-    . /root/.ports
+   
     . /root/.db-base
 
     oc_json=$(occtl -j show users 2>/dev/null)
