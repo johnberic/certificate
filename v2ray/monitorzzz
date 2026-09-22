@@ -261,12 +261,10 @@ elif [[ $service == "xray" ]]; then
         fi
     fi
 
-    # 3. Gamitin ang INNER JOIN / LEFT JOIN para tiyakin na kung sino ang pumasok sa xray_online ay Siyang-siya ring magiging 1 sa users
+    # 3. I-update ang users table base mismo sa kung sino ang nakatala sa xray_online para sa server IP na ito
     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "
-        UPDATE users u
-        LEFT JOIN xray_online x ON u.user_name = x.username AND x.server_ip = '$ip'
-        SET u.is_connected = IF(x.username IS NOT NULL, 1, 0),
-            u.login_status = IF(x.username IS NOT NULL, 'online', 'offline');
+        UPDATE users SET is_connected = 1, login_status = 'online' 
+        WHERE user_name IN (SELECT username FROM xray_online WHERE server_ip = '$ip');
     " 2>/dev/null
 
     # 4. I-update ang server status kasama ang kabuuang total ng xray online
