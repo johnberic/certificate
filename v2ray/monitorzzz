@@ -183,32 +183,42 @@ elif [[ $service == "openconnect" ]]; then
     totalocserv=0
 
     if [ "$ocserv" = "active" ]; then
-        # Kunin ang active users gamit ang occtl json output para sa tamang mapping ng username at interface
+        # Kunin ang active users mula sa occtl (JSON) para sa matching
         occtl_json=$(occtl --json show users 2>/dev/null)
 
-        for iface in $(ip -o link show 2>/dev/null | grep -oE 'vpns_[0-9]+'); do
-            rx=$(cat /sys/class/net/$iface/statistics/rx_bytes 2>/dev/null || echo 0)
-            tx=$(cat /sys/class/net/$iface/statistics/tx_bytes 2>/dev/null || echo 0)
-            total_cycle_bandwidth=$((rx + tx))
-            
-            current_time=$(date '+%Y-%m-%d %H:%M:%S')
-            current_ts=$(date +%s)
-            
-            # Hanapin ang actual username base sa device/interface mula sa occtl data gamit ang grep/sed
-            actual_user=$(echo "$occtl_json" | grep -B 5 "$iface" | grep -oP '"Username"\s*:\s*"\K[^"]+' | head -n 1)
-            
-            # Fallback kung sakaling hindi makuha sa occtl JSON
-            if [ -z "$actual_user" ]; then
-                actual_user=$(echo "$occtl_json" | grep -oP '"Username"\s*:\s*"\K[^"]+' | head -n 1)
+        # Kunin ang lahat ng rehistradong users mula sa database table mo (halimbawa ay 'users' table na may kolum na 'user_name')
+        # Palitan ang 'users' at 'user_name' kung iba ang pangalan ng table o column mo sa database
+        db_users=$(mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -N -e "SELECT user_name FROM users;" 2>/dev/null)
+
+        for db_user in $db_users; do
+            # I-check kung ang user na ito mula sa database ay kasalukuyang nasa occtl active list
+            if echo "$occtl_json" \vert{} grep -q "$db_user"; then
+                # Kunin ang interface o IP na gamit ng user na ito mula sa occtl data kung maaari
+                # O kaya ay hanapin ang rx/tx bytes ng interface na naka-assign sa kanya
+                # Para sa sigurado, hanapin natin ang device interface na konektado sa user na ito
+                user_dev=$(echo "$occtl_json" \vert{} grep -B 2 -A 5 "$db_user" | grep -oE 'vpns_[0-9]+' | head -n 1)
+                
+                if [ -n "$user_dev" ] && [ -d "/sys/class/net/$user_dev" ]; then
+                    rx=$(cat /sys/class/net/$user_dev/statistics/rx_bytes 2>/dev/null || echo 0)
+                    tx=$(cat /sys/class/net/$user_dev/statistics/tx_bytes 2>/dev/null || echo 0)
+                    user_ip=$(ip -4 addr show dev "$user_dev" 2>/dev/null \vert{} grep -oP 'inet \K[\d.]+' \vert{}\vert{} echo "$ip")
+                else
+                    rx=0
+                    tx=0
+                    user_ip="$ip"
+                fi
+
+                total_cycle_bandwidth=$((rx + tx))
+                current_time=$(date '+%Y-%m-%d %H:%M:%S')
+                current_ts=$(date +%s)
+                
+                totalocserv=$((totalocserv + 1))
+                
+                # SQL Insert/Update gamit ang TUNAY na username mula sa database (`$db_user`)
+                sql_insert="INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) VALUES ('OpenConnect', '$ip', '443', '$current_time', '$db_user', '$user_ip', '$rx', '$tx', '$total_cycle_bandwidth', '$current_time', '$current_time', '$current_time', 'online', '$current_ts', 'premium') ON DUPLICATE KEY UPDATE bytes_received = $rx, bytes_sent =$tx, bandwidth = $total_cycle_bandwidth, time='$current_time', status='online';"
+                
+                mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "$sql_insert" 2>/dev/null
             fi
-            
-            actual_user=${actual_user:-$iface}
-            user_ip=$(ip -4 addr show dev "$iface" 2>/dev/null | grep -oP 'inet \K[\d.]+' || echo "$ip")
-            totalocserv=$((totalocserv + 1))
-            
-            sql_insert="INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) VALUES ('OpenConnect', '$ip', '443', '$current_time', '$actual_user', '$user_ip', '$rx', '$tx', '$total_cycle_bandwidth', '$current_time', '$current_time', '$current_time', 'online', '$current_ts', 'premium') ON DUPLICATE KEY UPDATE bytes_received = $rx, bytes_sent = $tx, bandwidth = $total_cycle_bandwidth, time='$current_time', status='online';"
-            
-            mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "$sql_insert" 2>/dev/null
         done
 
         if [ "$totalocserv" -eq 0 ]; then
@@ -230,12 +240,12 @@ elif [[ $service == "openconnect" ]]; then
  "memory": "$memory",
  "disk": "$disk",
  "uptime": "$uptime",
- "udp_hysteria": "$hysteria_port - $udphysteria",
- "tcp_port": "$tcp_port - $ocserv",
- "socket_port": "$socket_port - $socket",
- "squid_port": "$squid_port - $squid",
- "tcp_ssl_port": "$tcp_ssl_port - $ssl",
- "udp_ssl_port": "$udp_ssl_port - $ssl"
+ "udp_hysteria": "$hysteria_port -$udphysteria",
+ "tcp_port": "$tcp_port -$ocserv",
+ "socket_port": "$socket_port -$socket",
+ "squid_port": "$squid_port -$squid",
+ "tcp_ssl_port": "$tcp_ssl_port -$ssl",
+ "udp_ssl_port": "$udp_ssl_port -$ssl"
 }
 EOF
 )
