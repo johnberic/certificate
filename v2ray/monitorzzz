@@ -170,7 +170,6 @@ elif [[ $service == "aio" ]]; then
 
     mysql -u "$USER" -p"$PASS" -D "$DB" -h "$HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$tcpovpn', hysteria_status='$udphysteria', xray_status='$xray', ssh_online='$totalssh', slowdns_status='$slowdns', ssh_status='$sshd', dropbear_status='$dropbear', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', xray_port='$xray_port', slowdns_port='$slowdns_port', ssh_port='$ssh_port', dropbear_port='$dropbear_port', squid='$squid_port', socket_port='$socket_port', online='$totalovpn', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
 
-
 elif [[ $service == "openconnect" ]]; then
     ocserv=$(systemctl is-active ocserv)
     udphysteria=$(systemctl is-active hysteria-server.service)
@@ -181,15 +180,11 @@ elif [[ $service == "openconnect" ]]; then
     [ -f /root/.ports ] && . /root/.ports
     [ -f /root/.db-base ] && . /root/.db-base
 
-    # Mahigpit na pagkuha ng totoong active users: Kapag walang user, strictly 0 ang magiging value.
     totalocserv=0
-    if [ "$ocserv" = "active" ]; then
-        if command -v occtl &> /dev/null; then
-            # Kunin ang output ng occtl at alisin ang mga header o empty rows
-            active_count=$(occtl -n show users 2>/dev/null | grep -v "No users" | grep -v "Username" | grep -v "^[[:space:]]*$" | wc -l)
-            if [[ "$active_count" =~ ^[0-9]+$ ]] && [ "$active_count" -gt 0 ]; then
-                totalocserv="$active_count"
-            fi
+    if [ "$ocserv" = "active" ] && command -v occtl &> /dev/null; then
+        active_count=$(occtl -n show users 2>/dev/null | grep -E -v "No users|Username|^[[:space:]]*$" | wc -l)
+        if [[ "$active_count" =~ ^[0-9]+$ ]]; then
+            totalocserv="$active_count"
         fi
     fi
 
