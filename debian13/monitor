@@ -1,6 +1,6 @@
 #!/bin/bash
 service=$1
-ip=$(curl -s https://api.ipify.org)
+ip=$(curl -s https://api.ipify.org || hostname -I | awk '{print $1}')
 os="$(neofetch os)";         os="${os##*: }"
 distro="$(neofetch distro)";   distro="${distro##*: }"
 cpu="$(neofetch cpu --cpu_speed on --cpu_cores off)"; cpu="${cpu##*: }"
@@ -8,6 +8,9 @@ memory="$(neofetch memory)";   memory="${memory##*: }"
 disk="$(neofetch disk)";       disk="${disk##*: }"
 uptime="$(neofetch uptime)";   uptime="${uptime##*: }"
 bandwidth=$(vnstat --oneline | cut -d ";" -f 15)
+
+echo "[DEBUG] Service requested: $service"
+echo "[DEBUG] Server IP: $ip"
 
 if [[ $service == "ssh" ]]; then
     ssh=$(systemctl is-active sshd)
@@ -48,23 +51,18 @@ EOF
     echo "$output"
 
 elif [[ $service == "hysteria" ]]; then
-    udphysteria=$(systemctl is-active hysteria-server.service)
-    
-    udphysteria2="inactive"
-    if systemctl is-active --quiet hysteria-v2; then
-        udphysteria2="active"
-    elif systemctl is-active --quiet hysteria-server2.service; then
-        udphysteria2="active"
-    elif systemctl is-active --quiet hysteria-luma; then
-        udphysteria2="active"
-    fi
-
+    udphysteria=$(systemctl is-active hysteria-luma.service)
+    udphysteria2=$(systemctl is-active hysteria-v2.service)
     squid=$(systemctl is-active squid)
     
     [ -f /root/.ports ] && . /root/.ports
     [ -f /root/.db-base ] && . /root/.db-base
 
-    hysteria2_port=${hysteria2_port:-0}
+    hysteria_port=${hysteria_port:-5666}
+    hysteria2_port=${hysteria2_port:-5667}
+
+    echo "[DEBUG] Hysteria v1 Status: $udphysteria | Port: $hysteria_port"
+    echo "[DEBUG] Hysteria v2 Status: $udphysteria2 | Port: $hysteria2_port"
 
     if [ "$udphysteria" = "active" ] || [ "$udphysteria2" = "active" ]; then
         total_hysteria=1
@@ -92,7 +90,9 @@ EOF
 )
     echo "$output"
 
+    echo "[DEBUG] Running MySQL UPDATE for hysteria..."
     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', hysteria_status='$udphysteria', hysteria2_status='$udphysteria2', squid_status='$squid', hysteria_port='$hysteria_port', hysteria2_port='$hysteria2_port', squid='$squid_port', online='$total_hysteria', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
+    echo "[DEBUG] MySQL query exit code: $?"
 
 elif [[ $service == "socksip" ]]; then
     udpSERVER=$(systemctl is-active UDPserver)
@@ -101,22 +101,15 @@ elif [[ $service == "socksip" ]]; then
     [ -f /root/.ports ] && . /root/.ports
     [ -f /root/.db-base ] && . /root/.db-base
 
+    echo "[DEBUG] Running MySQL UPDATE for socksip..."
     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', socksip_status='$udpSERVER', socksip_port='$socksip_port' WHERE server_ip='$ip'"
+    echo "[DEBUG] MySQL query exit code: $?"
 
 elif [[ $service == "openvpn" ]]; then
     tcpovpn=$(systemctl is-active openvpn@server2.service)
     udpovpn=$(systemctl is-active openvpn@server.service)
-    udphysteria=$(systemctl is-active hysteria-server.service)
-    
-    udphysteria2="inactive"
-    if systemctl is-active --quiet hysteria-v2; then
-        udphysteria2="active"
-    elif systemctl is-active --quiet hysteria-server2.service; then
-        udphysteria2="active"
-    elif systemctl is-active --quiet hysteria-luma; then
-        udphysteria2="active"
-    fi
-
+    udphysteria=$(systemctl is-active hysteria-luma.service)
+    udphysteria2=$(systemctl is-active hysteria-v2.service)
     squid=$(systemctl is-active squid)
     ssl=$(systemctl is-active stunnel4)
     socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
@@ -126,7 +119,10 @@ elif [[ $service == "openvpn" ]]; then
     totalovpn=$((tcpusers + udpusers))
     
     [ -f /root/.ports ] && . /root/.ports
-    hysteria2_port=${hysteria2_port:-0}
+    hysteria_port=${hysteria_port:-5666}
+    hysteria2_port=${hysteria2_port:-5667}
+
+    echo "[DEBUG] OpenVPN - Hysteria v1: $udphysteria ($hysteria_port) | Hysteria v2: $udphysteria2 ($hysteria2_port)"
 
     if [ "$udphysteria" = "active" ] || [ "$udphysteria2" = "active" ]; then
         total_hysteria=1
@@ -161,25 +157,16 @@ EOF
 )
     echo "$output"
 
+    echo "[DEBUG] Running MySQL UPDATE for openvpn..."
     mysql --skip-ssl -u "$USER" -p"$PASS" -D "$DB" -h "$HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$tcpovpn', hysteria_status='$udphysteria', hysteria2_status='$udphysteria2', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', hysteria2_port='$hysteria2_port', squid='$squid_port', socket_port='$socket_port', online='$totalovpn', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
+    echo "[DEBUG] MySQL query exit code: $?"
 
 elif [[ $service == "aio" ]]; then
     tcpovpn=$(systemctl is-active openvpn@server2.service)
     udpovpn=$(systemctl is-active openvpn@server.service)
     
-    udphysteria="inactive"
-    if systemctl is-active --quiet hysteria-server.service; then
-        udphysteria="active"
-    fi
-
-    udphysteria2="inactive"
-    if systemctl is-active --quiet hysteria-v2; then
-        udphysteria2="active"
-    elif systemctl is-active --quiet hysteria-server2.service; then
-        udphysteria2="active"
-    elif systemctl is-active --quiet hysteria-luma; then
-        udphysteria2="active"
-    fi
+    udphysteria=$(systemctl is-active hysteria-luma.service)
+    udphysteria2=$(systemctl is-active hysteria-v2.service)
 
     xray=$(systemctl is-active xray.service)
     slowdns=$(systemctl is-active server-sldns.service)
@@ -202,7 +189,10 @@ elif [[ $service == "aio" ]]; then
     totalssh=$((total_sshd + total_dropbear + total_socket1 + total_socket2 + total_socket3 + total_sshssl))
     
     [ -f /root/.ports ] && . /root/.ports
-    hysteria2_port=${hysteria2_port:-0}
+    hysteria_port=${hysteria_port:-5666}
+    hysteria2_port=${hysteria2_port:-5667}
+
+    echo "[DEBUG] AIO - Hysteria v1: $udphysteria ($hysteria_port) | Hysteria v2: $udphysteria2 ($hysteria2_port)"
 
     if [ "$udphysteria" = "active" ] || [ "$udphysteria2" = "active" ]; then
         total_hysteria=1
@@ -218,28 +208,24 @@ elif [[ $service == "aio" ]]; then
     PASS_USE="${PASS:-$DB_PASS}"
     HOST_USE="${HOST:-$DB_HOST}"
 
-    mysql --skip-ssl -u "$USER_USE" -p"$PASS_USE" -D "$DB_USE" -h "$HOST_USE" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$tcpovpn', hysteria_status='$udphysteria', hysteria2_status='$udphysteria2', xray_status='$xray', ssh_online='$totalssh', slowdns_status='$slowdns', ssh_status='$sshd', dropbear_status='$dropbear', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', hysteria2_port='$hysteria2_port', xray_port='$xray_port', slowdns_port='$slowdns_port', ssh_port='$ssh_port', dropbear_port='$dropbear_port', squid='$squid_port', online='$totalovpn', hysteria_online='$total_hysteria' WHERE server_ip='$ip' OR server_ip='127.0.0.1'"
+    echo "[DEBUG] Running MySQL UPDATE for aio..."
+    mysql --skip-ssl -u "$USER_USE" -p"$PASS_USE" -D "$DB_USE" -h "$HOST_USE" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$tcpovpn', hysteria_status='$udphysteria', hysteria2_status='$udphysteria2', hysteria2_port='$hysteria2_port', xray_status='$xray', ssh_online='$totalssh', slowdns_status='$slowdns', ssh_status='$sshd', dropbear_status='$dropbear', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', xray_port='$xray_port', slowdns_port='$slowdns_port', ssh_port='$ssh_port', dropbear_port='$dropbear_port', squid='$squid_port', online='$totalovpn', hysteria_online='$total_hysteria' WHERE server_ip='$ip' OR server_ip='127.0.0.1'"
+    echo "[DEBUG] MySQL AIO Update Exit Code: $?"
 
 elif [[ $service == "openconnect" ]]; then
     ocserv=$(systemctl is-active ocserv)
-    udphysteria=$(systemctl is-active hysteria-server.service)
-    
-    udphysteria2="inactive"
-    if systemctl is-active --quiet hysteria-v2; then
-        udphysteria2="active"
-    elif systemctl is-active --quiet hysteria-server2.service; then
-        udphysteria2="active"
-    elif systemctl is-active --quiet hysteria-luma; then
-        udphysteria2="active"
-    fi
-
+    udphysteria=$(systemctl is-active hysteria-luma.service)
+    udphysteria2=$(systemctl is-active hysteria-v2.service)
     squid=$(systemctl is-active squid)
     ssl=$(systemctl is-active stunnel4)
     socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
     
     [ -f /root/.ports ] && . /root/.ports
-    hysteria2_port=${hysteria2_port:-0}
+    hysteria_port=${hysteria_port:-5666}
+    hysteria2_port=${hysteria2_port:-5667}
     [ -f /root/.db-base ] && . /root/.db-base
+
+    echo "[DEBUG] OpenConnect - Hysteria v1: $udphysteria ($hysteria_port) | Hysteria v2: $udphysteria2 ($hysteria2_port)"
 
     totalocserv=0
     if [ "$ocserv" = "active" ]; then
@@ -280,7 +266,9 @@ EOF
 )
     echo "$output"
 
+    echo "[DEBUG] Running MySQL UPDATE for openconnect..."
     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$ocserv', hysteria_status='$udphysteria', hysteria2_status='$udphysteria2', udp_status='$ocserv', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', hysteria2_port='$hysteria2_port', squid='$squid_port', online='$totalocserv', hysteria_online='$totalocserv' WHERE server_ip='$ip'"
+    echo "[DEBUG] MySQL query exit code: $?"
 
 elif [[ $service == "xray" ]]; then
     xray=$(systemctl is-active xray.service)
@@ -331,7 +319,9 @@ elif [[ $service == "xray" ]]; then
         fi
     fi
 
+    echo "[DEBUG] Running MySQL UPDATE for xray..."
     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', xray_tls='$xray_tls', xray_ntls='$xray_ntls', xray_status='$xray', squid_status='$squid', squid='$squid_port', xray_vmess='$vmess', xray_vless='$vless', xray_trojan='$trojan', xray_ss='$ss', xray_online='$total_xray' WHERE server_ip='$ip'" 2>/dev/null
+    echo "[DEBUG] MySQL query exit code: $?"
 
 elif [[ $service == "pptp" ]]; then
     pptpd=$(systemctl is-active pptpd)
