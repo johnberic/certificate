@@ -230,13 +230,11 @@ elif [[ $service == "aio" ]]; then
     # 5. MySQL Database Update para sa Server List status
     mysql --skip-ssl -u "$USER_USE" -p"$PASS_USE" -D "$DB_USE" -h "$HOST_USE" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$tcpovpn', hysteria_status='$udphysteria', hysteria2_status='$udphysteria2', hysteria2_port='$hysteria2_port', xray_status='$xray', ssh_online='$totalssh', slowdns_status='$slowdns', ssh_status='$sshd', dropbear_status='$dropbear', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', xray_port='$xray_port', slowdns_port='$slowdns_port', ssh_port='$ssh_port', dropbear_port='$dropbear_port', squid='$squid_port', online='$totalovpn', hysteria_online='$total_hysteria' WHERE server_ip='$ip' OR server_ip='127.0.0.1'"
 
-    # 6. Smart User Status Update sa Database (Safe para sa Hysteria at OpenVPN)
+    # 6. Smart User Status & Online Sync (SSH, Dropbear, OpenVPN)
     echo "[DEBUG] Updating users connection status in database..."
     
-    # Pagsamahin ang active users mula sa SSH, Dropbear, at OpenVPN
     all_online_users=$(echo "$active_ssh_users $ovpn_users" | xargs -n1 | grep -v '^$' | sort -u)
 
-    # I-set sa 1 ang is_connected ng mga kasalukuyang online sa SSH, Dropbear, at OpenVPN
     for u in $all_online_users; do
         if [ -n "$u" ] && [ "$u" != "root" ] && [ "$u" != "NULL" ]; then
             mysql --skip-ssl -u "$USER_USE" -p"$PASS_USE" -D "$DB_USE" -h "$HOST_USE" -e "UPDATE users SET is_connected = 1 WHERE username='$u' OR user_name='$u';"
@@ -244,6 +242,10 @@ elif [[ $service == "aio" ]]; then
         fi
     done
 
+    # 7. Incremental Bandwidth Update para sa lahat ng may is_connected = 1 (Kasama ang Hysteria)
+    echo "[DEBUG] Updating bandwidth for active connected users..."
+    mysql --skip-ssl -u "$USER_USE" -p"$PASS_USE" -D "$DB_USE" -h "$HOST_USE" -e "UPDATE users SET bandwidth = IFNULL(bandwidth, 0) + 5242880 WHERE is_connected = 1;" 
+    
     echo "[DEBUG] Server & Online Users Sync Completed Successfully."
 	
 elif [[ $service == "openconnect" ]]; then
