@@ -12,6 +12,17 @@ bandwidth=$(vnstat --oneline | cut -d ";" -f 15)
 echo "[DEBUG] Service requested: $service"
 echo "[DEBUG] Server IP: $ip"
 
+# Kunin ang ports configuration kung nag-eexist
+[ -f /root/.ports ] && . /root/.ports
+
+# I-set ang default ports kung walang naka-set sa .ports file
+ssh_port=${ssh_port:-22}
+dropbear_port=${dropbear_port:-443}
+socket_port=${socket_port:-80}
+squid_port=${squid_port:-3128}
+ssh_ssl_port=${ssh_ssl_port:-443}
+dropbear_ssl_port=${dropbear_ssl_port:-442}
+
 # Kunin ang DB credentials kung nag-eexist
 [ -f /root/.db-base ] && . /root/.db-base
 [ -f /etc/openvpn/login/config.sh ] && . /etc/openvpn/login/config.sh
@@ -28,19 +39,17 @@ run_mysql() {
 
 if [[ $service == "ssh" ]]; then
     ssh=$(systemctl is-active sshd)
-    dropbear=$((echo >/dev/tcp/localhost/44) &>/dev/null && echo "active" || echo "inactive")
+    dropbear=$(systemctl is-active dropbear)
     squid=$(systemctl is-active squid)
     ssl=$(systemctl is-active stunnel4)
-    socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
+    socket=$((echo >/dev/tcp/localhost/$socket_port) &>/dev/null && echo "active" || echo "inactive")
     
-    total_sshd=$(netstat -natp 2>/dev/null | awk "/$ip:22\y/ && /ESTABLISHED/ && /sshd/" | wc -l)
-    total_dropbear=$(netstat -natp 2>/dev/null | awk "/$ip:44\y/ && /ESTABLISHED/ && /dropbear/" | wc -l)
-    total_socket=$(netstat -natp 2>/dev/null | awk "/$ip:80\y/ && /ESTABLISHED/ && /python/" | wc -l)
+    total_sshd=$(netstat -natp 2>/dev/null | awk "/$ip:$ssh_port\y/ && /ESTABLISHED/ && /sshd/" | wc -l)
+    total_dropbear=$(netstat -natp 2>/dev/null | awk "/$ip:$dropbear_port\y/ && /ESTABLISHED/ && /dropbear/" | wc -l)
+    total_socket=$(netstat -natp 2>/dev/null | awk "/$ip:$socket_port\y/ && /ESTABLISHED/ && /python/" | wc -l)
     total_ssl=$(netstat -natp 2>/dev/null | awk "/$ip:443\y/ && /ESTABLISHED/ && /stunnel4/" | wc -l)
     totalssh=$((total_sshd + total_dropbear + total_socket + total_ssl))
     
-    [ -f /root/.ports ] && . /root/.ports
-
     output=$(cat <<EOF
 {
  "service": "ssh protocol",
@@ -69,8 +78,6 @@ elif [[ $service == "hysteria" ]]; then
     udphysteria2=$(systemctl is-active hysteria-v2.service)
     squid=$(systemctl is-active squid)
     
-    [ -f /root/.ports ] && . /root/.ports
-
     hysteria_port=${hysteria_port:-5666}
     hysteria2_port=${hysteria2_port:-5667}
 
@@ -111,8 +118,6 @@ elif [[ $service == "socksip" ]]; then
     udpSERVER=$(systemctl is-active UDPserver)
     squid=$(systemctl is-active squid)
 
-    [ -f /root/.ports ] && . /root/.ports
-
     echo "[DEBUG] Running MySQL UPDATE for socksip..."
     run_mysql -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', socksip_status='$udpSERVER', socksip_port='$socksip_port' WHERE server_ip='$ip'"
     echo "[DEBUG] MySQL query exit code: $?"
@@ -130,7 +135,7 @@ elif [[ $service == "openvpn" ]] || [[ $service == "aio" ]]; then
     dropbear=$(systemctl is-active dropbear)
     squid=$(systemctl is-active squid)
     ssl=$(systemctl is-active stunnel4)
-    socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
+    socket=$((echo >/dev/tcp/localhost/$socket_port) &>/dev/null && echo "active" || echo "inactive")
     
     ovpn_users=""
     [ -f /etc/openvpn/server/tcpclient.log ] && {
@@ -143,7 +148,6 @@ elif [[ $service == "openvpn" ]] || [[ $service == "aio" ]]; then
     
     active_ssh_users=$(ps aux | grep -iE 'sshd:|dropbear' | grep -v grep | awk '{print $1}' | grep -vE 'root|nobody|daemon' | sort -u)
 
-    [ -f /root/.ports ] && . /root/.ports
     hysteria_port=${hysteria_port:-5666}
     hysteria2_port=${hysteria2_port:-5667}
 
@@ -162,11 +166,11 @@ elif [[ $service == "openvpn" ]] || [[ $service == "aio" ]]; then
 
     target_ip="${ip:-0.0.0.0}"
     if [ "$target_ip" = "0.0.0.0" ] || [ -z "$ip" ]; then
-        total_sshd=$(netstat -natp 2>/dev/null | grep ":22 " | grep "ESTABLISHED" | grep "sshd" | wc -l)
-        total_dropbear=$(netstat -natp 2>/dev/null | grep ":441 " | grep "ESTABLISHED" | grep "dropbear" | wc -l)
+        total_sshd=$(netstat -natp 2>/dev/null | grep ":$ssh_port " | grep "ESTABLISHED" | grep "sshd" | wc -l)
+        total_dropbear=$(netstat -natp 2>/dev/null | grep ":$dropbear_port " | grep "ESTABLISHED" | grep "dropbear" | wc -l)
     else
-        total_sshd=$(netstat -natp 2>/dev/null | awk "/$ip:22/ && /ESTABLISHED/ && /sshd/" | wc -l)
-        total_dropbear=$(netstat -natp 2>/dev/null | awk "/$ip:441/ && /ESTABLISHED/ && /dropbear/" | wc -l)
+        total_sshd=$(netstat -natp 2>/dev/null | awk "/$ip:$ssh_port/ && /ESTABLISHED/ && /sshd/" | wc -l)
+        total_dropbear=$(netstat -natp 2>/dev/null | awk "/$ip:$dropbear_port/ && /ESTABLISHED/ && /dropbear/" | wc -l)
     fi
     totalssh=$((total_sshd + total_dropbear))
 
@@ -187,16 +191,15 @@ elif [[ $service == "openvpn" ]] || [[ $service == "aio" ]]; then
     run_mysql -e "UPDATE users SET bandwidth = IFNULL(bandwidth, 0) + 5242880 WHERE is_connected = 1;" 
     
     echo "[DEBUG] Server & Online Users Sync Completed Successfully."
-	
+    
 elif [[ $service == "openconnect" ]]; then
     ocserv=$(systemctl is-active ocserv)
     udphysteria=$(systemctl is-active hysteria-luma.service)
     udphysteria2=$(systemctl is-active hysteria-v2.service)
     squid=$(systemctl is-active squid)
     ssl=$(systemctl is-active stunnel4)
-    socket=$((echo >/dev/tcp/localhost/80) &>/dev/null && echo "active" || echo "inactive")
+    socket=$((echo >/dev/tcp/localhost/$socket_port) &>/dev/null && echo "active" || echo "inactive")
     
-    [ -f /root/.ports ] && . /root/.ports
     hysteria_port=${hysteria_port:-5666}
     hysteria2_port=${hysteria2_port:-5667}
 
@@ -250,7 +253,6 @@ elif [[ $service == "xray" ]]; then
     nginx=$(systemctl is-active nginx)
     squid=$(systemctl is-active squid)
 
-    [ -f /root/.ports ] && . /root/.ports
     [ -f /etc/xray/.db-base ] && . /etc/xray/.db-base
 
     x_port=${xray_port:-10001}
