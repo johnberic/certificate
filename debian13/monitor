@@ -1,12 +1,12 @@
 #!/bin/bash
 service=$1
 ip=$(curl -s https://api.ipify.org || hostname -I | awk '{print $1}')
-os="$(neofetch os)";        os="${os##*: }"
-distro="$(neofetch distro)";   distro="${distro##*: }"
+os="$(neofetch os)"; os="${os##*: }"
+distro="$(neofetch distro)"; distro="${distro##*: }"
 cpu="$(neofetch cpu --cpu_speed on --cpu_cores off)"; cpu="${cpu##*: }"
-memory="$(neofetch memory)";   memory="${memory##*: }"
-disk="$(neofetch disk)";       disk="${disk##*: }"
-uptime="$(neofetch uptime)";   uptime="${uptime##*: }"
+memory="$(neofetch memory)"; memory="${memory##*: }"
+disk="$(neofetch disk)"; disk="${disk##*: }"
+uptime="$(neofetch uptime)"; uptime="${uptime##*: }"
 bandwidth=$(vnstat --oneline | cut -d ";" -f 15)
 
 echo "[DEBUG] Service requested: $service"
@@ -15,9 +15,9 @@ echo "[DEBUG] Server IP: $ip"
 # Kunin ang ports configuration kung nag-eexist
 [ -f /root/.ports ] && . /root/.ports
 
-# I-set ang default ports kung walang naka-set sa .ports file
+# I-set ang ports (Dropbear ay nasa port 22 base sa netstat mo)
 ssh_port=${ssh_port:-22}
-dropbear_port=${dropbear_port:-443}
+dropbear_port=${dropbear_port:-22}
 socket_port=${socket_port:-80}
 squid_port=${squid_port:-3128}
 ssh_ssl_port=${ssh_ssl_port:-443}
@@ -44,11 +44,10 @@ if [[ $service == "ssh" ]]; then
     ssl=$(systemctl is-active stunnel4)
     socket=$((echo >/dev/tcp/localhost/$socket_port) &>/dev/null && echo "active" || echo "inactive")
     
-    total_sshd=$(netstat -natp 2>/dev/null | awk "/$ip:$ssh_port\y/ && /ESTABLISHED/ && /sshd/" | wc -l)
     total_dropbear=$(netstat -natp 2>/dev/null | awk "/$ip:$dropbear_port\y/ && /ESTABLISHED/ && /dropbear/" | wc -l)
-    total_socket=$(netstat -natp 2>/dev/null | awk "/$ip:$socket_port\y/ && /ESTABLISHED/ && /python/" | wc -l)
+    total_socket=$(netstat -natp 2>/dev/null | awk "/$ip:$socket_port\y/ && /ESTABLISHED/ && /goproxy|python/" | wc -l)
     total_ssl=$(netstat -natp 2>/dev/null | awk "/$ip:443\y/ && /ESTABLISHED/ && /stunnel4/" | wc -l)
-    totalssh=$((total_sshd + total_dropbear + total_socket + total_ssl))
+    totalssh=$((total_dropbear + total_socket + total_ssl))
     
     output=$(cat <<EOF
 {
@@ -62,7 +61,7 @@ if [[ $service == "ssh" ]]; then
  "memory": "$memory",
  "disk": "$disk",
  "uptime": "$uptime",
- "ssh_port": "$ssh_port - $ssh",
+ "ssh_port": "$ssh_port - $dropbear",
  "dropbear_port": "$dropbear_port - $dropbear",
  "socket_port": "$socket_port - $socket",
  "squid_port": "$squid_port - $squid",
@@ -166,13 +165,11 @@ elif [[ $service == "openvpn" ]] || [[ $service == "aio" ]]; then
 
     target_ip="${ip:-0.0.0.0}"
     if [ "$target_ip" = "0.0.0.0" ] || [ -z "$ip" ]; then
-        total_sshd=$(netstat -natp 2>/dev/null | grep ":$ssh_port " | grep "ESTABLISHED" | grep "sshd" | wc -l)
         total_dropbear=$(netstat -natp 2>/dev/null | grep ":$dropbear_port " | grep "ESTABLISHED" | grep "dropbear" | wc -l)
     else
-        total_sshd=$(netstat -natp 2>/dev/null | awk "/$ip:$ssh_port/ && /ESTABLISHED/ && /sshd/" | wc -l)
         total_dropbear=$(netstat -natp 2>/dev/null | awk "/$ip:$dropbear_port/ && /ESTABLISHED/ && /dropbear/" | wc -l)
     fi
-    totalssh=$((total_sshd + total_dropbear))
+    totalssh=$total_dropbear
 
     # MySQL Database Update para sa Server List status
     run_mysql -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$tcpovpn', hysteria_status='$udphysteria', hysteria2_status='$udphysteria2', hysteria2_port='$hysteria2_port', xray_status='$xray', ssh_online='$totalssh', slowdns_status='$slowdns', ssh_status='$sshd', dropbear_status='$dropbear', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', xray_port='$xray_port', slowdns_port='$slowdns_port', ssh_port='$ssh_port', dropbear_port='$dropbear_port', squid='$squid_port', online='$totalovpn', hysteria_online='$total_hysteria' WHERE server_ip='$ip' OR server_ip='127.0.0.1'"
@@ -202,8 +199,6 @@ elif [[ $service == "openconnect" ]]; then
     
     hysteria_port=${hysteria_port:-5666}
     hysteria2_port=${hysteria2_port:-5667}
-
-    echo "[DEBUG] OpenConnect - Hysteria v1: $udphysteria ($hysteria_port) | Hysteria v2: $udphysteria2 ($hysteria2_port)"
 
     totalocserv=0
     if [ "$ocserv" = "active" ]; then
