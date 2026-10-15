@@ -450,7 +450,7 @@ EOF
             echo "[DEBUG] WireGuard database update exit code: $?"
         else
             echo "[DEBUG] Walang matching WireGuard columns sa server_list."
-        fi
+       
 
 
 elif [[ $service == "xray" ]]; then
