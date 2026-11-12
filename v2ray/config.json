@@ -1,237 +1,12 @@
 {
-  "log" : {
+  "log": {
     "access": "/var/log/xray/access.log",
     "error": "/var/log/xray/error.log",
     "loglevel": "warning"
   },
-  "inbounds": [
-      {
-      "listen": "127.0.0.1",
-      "port": 10000,
-      "protocol": "dokodemo-door",
-      "settings": {
-        "address": "127.0.0.1"
-      },
-      "tag": "api"
-    },
-   {
-     "listen": "127.0.0.1",
-     "port": "10001",
-     "protocol": "vless",
-      "settings": {
-          "decryption":"none",
-            "clients": [
-               {
-                 "id": "uuid"
-#vless
-             }
-          ]
-       },
-       "streamSettings":{
-         "network": "ws",
-            "wsSettings": {
-                "path": "/vlessws"
-          }
-        }
-     },
-     {
-     "listen": "127.0.0.1",
-     "port": "10002",
-     "protocol": "vmess",
-      "settings": {
-            "clients": [
-               {
-                 "id": "uuid",
-                 "alterId": 0
-#vmess
-             }
-          ]
-       },
-       "streamSettings":{
-         "network": "ws",
-            "wsSettings": {
-                "path": "/vmess"
-          }
-        }
-     },
-    {
-      "listen": "127.0.0.1",
-      "port": "10003",
-      "protocol": "trojan",
-      "settings": {
-          "decryption":"none",
-           "clients": [
-              {
-                 "password": "FirenetDev"
-#trojanws
-              }
-          ],
-         "udp": true
-       },
-       "streamSettings":{
-           "network": "ws",
-           "wsSettings": {
-               "path": "/trojan-ws"
-            }
-         }
-     },
-    {
-         "listen": "127.0.0.1",
-        "port": "10004",
-        "protocol": "shadowsocks",
-        "settings": {
-           "clients": [
-           {
-           "method": "aes-128-gcm",
-          "password": "FirenetDev"
-#ssws
-           }
-          ],
-          "network": "tcp,udp"
-       },
-       "streamSettings":{
-          "network": "ws",
-             "wsSettings": {
-               "path": "/ss-ws"
-           }
-        }
-     },
-      {
-        "listen": "127.0.0.1",
-        "port": "10005",
-        "protocol": "vless",
-        "settings": {
-         "decryption":"none",
-           "clients": [
-             {
-               "id": "uuid"
-#vlessgrpc
-             }
-          ]
-       },
-          "streamSettings":{
-             "network": "grpc",
-             "grpcSettings": {
-                "serviceName": "vless-grpc"
-           }
-        }
-     },
-     {
-      "listen": "127.0.0.1",
-      "port": "10006",
-     "protocol": "vmess",
-      "settings": {
-            "clients": [
-               {
-                 "id": "uuid",
-                 "alterId": 0
-#vmessgrpc
-             }
-          ]
-       },
-       "streamSettings":{
-         "network": "grpc",
-            "grpcSettings": {
-                "serviceName": "vmess-grpc"
-          }
-        }
-     },
-     {
-        "listen": "127.0.0.1",
-        "port": "10007",
-        "protocol": "trojan",
-        "settings": {
-          "decryption":"none",
-             "clients": [
-               {
-                 "password": "FirenetDev"
-#trojangrpc
-               }
-           ]
-        },
-         "streamSettings":{
-         "network": "grpc",
-           "grpcSettings": {
-               "serviceName": "trojan-grpc"
-         }
-      }
-   },
-   {
-    "listen": "127.0.0.1",
-    "port": "10008",
-    "protocol": "shadowsocks",
-    "settings": {
-        "clients": [
-          {
-             "method": "aes-128-gcm",
-             "password": "FirenetDev"
-#ssgrpc
-           }
-         ],
-           "network": "tcp,udp"
-      },
-    "streamSettings":{
-     "network": "grpc",
-        "grpcSettings": {
-           "serviceName": "ss-grpc"
-          }
-       }
-    }
-  ],
-  "outbounds": [
-    {
-      "protocol": "freedom",
-      "settings": {}
-    },
-    {
-      "protocol": "blackhole",
-      "settings": {},
-      "tag": "blocked"
-    }
-  ],
-  "routing": {
-    "rules": [
-      {
-        "type": "field",
-        "ip": [
-          "0.0.0.0/8",
-          "10.0.0.0/8",
-          "100.64.0.0/10",
-          "169.254.0.0/16",
-          "172.16.0.0/12",
-          "192.0.0.0/24",
-          "192.0.2.0/24",
-          "192.168.0.0/16",
-          "198.18.0.0/15",
-          "198.51.100.0/24",
-          "203.0.113.0/24",
-          "::1/128",
-          "fc00::/7",
-          "fe80::/10"
-        ],
-        "outboundTag": "blocked"
-      },
-      {
-        "inboundTag": [
-          "api"
-        ],
-        "outboundTag": "api",
-        "type": "field"
-      },
-      {
-        "type": "field",
-        "outboundTag": "blocked",
-        "protocol": [
-          "bittorrent"
-        ]
-      }
-    ]
-  },
   "stats": {},
   "api": {
-    "services": [
-      "StatsService"
-    ],
+    "services": ["StatsService"],
     "tag": "api"
   },
   "policy": {
@@ -244,52 +19,9 @@
     "system": {
       "statsInboundUplink": true,
       "statsInboundDownlink": true,
-      "statsOutboundUplink" : true,
-      "statsOutboundDownlink" : true
+      "statsOutboundUplink": true,
+      "statsOutboundDownlink": true
     }
-  }
-}
-{
-  "outbounds": [
-    {
-      "protocol": "dns",
-      "tag": "dns-out"
-    },
-    {
-      "streamSettings": {
-        "sockopt": {
-          "mark": 255
-        }
-      },
-      "settings": {
-        "domainStrategy": "UseIPv4"
-      },
-      "protocol": "freedom",
-      "tag": "direct"
-    },
-    {
-      "protocol": "blackhole",
-      "tag": "blackhole"
-    },
-    {
-      "settings": {
-        "servers": [
-          {
-            "port": 10000,
-            "address": "127.0.0.1"
-          }
-        ]
-      },
-      "streamSettings": {
-        "network": "tcp",
-        "security": "none"
-      },
-      "protocol": "socks",
-      "tag": "out"
-    }
-  ],
-  "log": {
-    "loglevel": "warning"
   },
   "dns": {
     "hosts": {
@@ -316,43 +48,134 @@
       }
     ]
   },
-  "routing": {
-    "rules": [
-      {
-        "type": "field",
-        "outboundTag": "Reject",
-        "domain": ["geosite:category-ads-all"]
-      },
-      {
-        "type": "field",
-        "outboundTag": "Direct",
-        "domain": [
-          "geosite:private",
-          "geosite:apple-id",
-          "geosite:google-id",
-          "geosite:tld-id",
-          "geosite:category-games@id"
-        ]
-      },
-      {
-        "type": "field",
-        "outboundTag": "Proxy",
-        "domain": ["geosite:geolocation-!id"]
-      },
-      {
-        "type": "field",
-        "outboundTag": "Direct",
-        "domain": ["geosite:id"]
-      },
-      {
-        "type": "field",
-        "outboundTag": "Proxy",
-        "network": "tcp,udp"
-      }
-    ]
-  },
   "inbounds": [
     {
+      "listen": "127.0.0.1",
+      "port": 10000,
+      "protocol": "dokodemo-door",
+      "settings": {
+        "address": "127.0.0.1"
+      },
+      "tag": "api"
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": "10001",
+      "protocol": "vless",
+      "settings": {
+        "decryption": "none",
+        "clients": [{ "id": "tknetwork" }]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": { "path": "/vlessws" }
+      }
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": "10002",
+      "protocol": "vmess",
+      "settings": {
+        "clients": [{ "id": "tknetwork", "alterId": 0 }]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": { "path": "/vmess" }
+      }
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": "10003",
+      "protocol": "trojan",
+      "settings": {
+        "decryption": "none",
+        "clients": [{ "password": "FirenetDev" }],
+        "udp": true
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": { "path": "/trojan-ws" }
+      }
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": "10004",
+      "protocol": "shadowsocks",
+      "settings": {
+        "clients": [{ "method": "aes-128-gcm", "password": "FirenetDev" }],
+        "network": "tcp,udp"
+      },
+      "streamSettings": {
+        "network": "ws",
+        "wsSettings": { "path": "/ss-ws" }
+      }
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": "10005",
+      "protocol": "vless",
+      "settings": {
+        "decryption": "none",
+        "clients": [{ "id": "tknetwork" }]
+      },
+      "streamSettings": {
+        "network": "grpc",
+        "grpcSettings": { "serviceName": "vless-grpc" }
+      }
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": "10006",
+      "protocol": "vmess",
+      "settings": {
+        "clients": [{ "id": "DexterEskalarte", "alterId": 0 }]
+      },
+      "streamSettings": {
+        "network": "grpc",
+        "grpcSettings": { "serviceName": "vmess-grpc" }
+      }
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": "10007",
+      "protocol": "trojan",
+      "settings": {
+        "decryption": "none",
+        "clients": [{ "password": "FirenetDev" }]
+      },
+      "streamSettings": {
+        "network": "grpc",
+        "grpcSettings": { "serviceName": "trojan-grpc" }
+      }
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": "10008",
+      "protocol": "shadowsocks",
+      "settings": {
+        "clients": [{ "method": "aes-128-gcm", "password": "FirenetDev" }],
+        "network": "tcp,udp"
+      },
+      "streamSettings": {
+        "network": "grpc",
+        "grpcSettings": { "serviceName": "ss-grpc" }
+      }
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": "10010",
+      "protocol": "vless",
+      "settings": {
+        "decryption": "none",
+        "clients": [{ "id": "tknetwork" }]
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "xhttpSettings": { "mode": "auto", "path": "/xhttp" }
+      }
+    },
+    {
+      "listen": "127.0.0.1",
       "port": 10000,
       "protocol": "dokodemo-door",
       "settings": {
@@ -360,8 +183,85 @@
         "network": "udp",
         "address": "174.138.21.128"
       },
-      "tag": "dns-in",
-      "listen": "127.0.0.1"
+      "tag": "dns-in"
     }
-  ]
+  ],
+  "outbounds": [
+    {
+      "protocol": "dns",
+      "tag": "dns-out"
+    },
+    {
+      "protocol": "freedom",
+      "settings": {
+        "domainStrategy": "UseIPv4"
+      },
+      "streamSettings": {
+        "sockopt": { "mark": 255 }
+      },
+      "tag": "direct"
+    },
+    {
+      "protocol": "blackhole",
+      "tag": "blackhole"
+    },
+    {
+      "protocol": "socks",
+      "settings": {
+        "servers": [{ "port": 10000, "address": "127.0.0.1" }]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "none"
+      },
+      "tag": "out"
+    }
+  ],
+  "routing": {
+    "rules": [
+      {
+        "type": "field",
+        "ip": [
+          "0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "169.254.0.0/16",
+          "172.16.0.0/12", "192.0.0.0/24", "192.0.2.0/24", "192.168.0.0/16",
+          "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24",
+          "::1/128", "fc00::/7", "fe80::/10"
+        ],
+        "outboundTag": "blocked"
+      },
+      {
+        "type": "field",
+        "inboundTag": ["api"],
+        "outboundTag": "api"
+      },
+      {
+        "type": "field",
+        "protocol": ["bittorrent"],
+        "outboundTag": "blocked"
+      },
+      {
+        "type": "field",
+        "domain": ["geosite:category-ads-all"],
+        "outboundTag": "blackhole"
+      },
+      {
+        "type": "field",
+        "domain": [
+          "geosite:private", "geosite:apple-id", "geosite:google-id",
+          "geosite:tld-id", "geosite:category-games@id"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "domain": ["geosite:geolocation-!id"],
+        "outboundTag": "out"
+      },
+      {
+        "type": "field",
+        "domain": ["geosite:id"],
+        "outboundTag": "direct"
+      }
+    ]
+  }
 }
