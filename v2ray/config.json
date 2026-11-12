@@ -64,7 +64,7 @@
       "protocol": "vless",
       "settings": {
         "decryption": "none",
-        "clients": [{ "id": "tknetwork" }]
+        "clients": [{ "id": "DexterEskalarte" }]
       },
       "streamSettings": {
         "network": "ws",
@@ -76,7 +76,7 @@
       "port": "10002",
       "protocol": "vmess",
       "settings": {
-        "clients": [{ "id": "tknetwork", "alterId": 0 }]
+        "clients": [{ "id": "DexterEskalarte", "alterId": 0 }]
       },
       "streamSettings": {
         "network": "ws",
@@ -116,7 +116,7 @@
       "protocol": "vless",
       "settings": {
         "decryption": "none",
-        "clients": [{ "id": "tknetwork" }]
+        "clients": [{ "id": "DexterEskalarte" }]
       },
       "streamSettings": {
         "network": "grpc",
@@ -167,7 +167,7 @@
       "protocol": "vless",
       "settings": {
         "decryption": "none",
-        "clients": [{ "id": "tknetwork" }]
+        "clients": [{ "id": "DexterEskalarte" }]
       },
       "streamSettings": {
         "network": "xhttp",
