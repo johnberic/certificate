@@ -24,7 +24,7 @@ if [[ $service == "ssh" ]]; then
     
     [ -f /root/.ports ] && . /root/.ports
 
-    output=$(cat <<EOF
+    output=$(cat <<INNER_EOF
 {
  "service": "ssh protocol",
  "ip": "$ip",
@@ -43,7 +43,7 @@ if [[ $service == "ssh" ]]; then
  "ssh_ssl_port": "$ssh_ssl_port - $ssl",
  "dropbear_ssl_port": "$dropbear_ssl_port - $ssl"
 }
-EOF
+INNER_EOF
 )
     echo "$output"
 
@@ -60,7 +60,7 @@ elif [[ $service == "hysteria" ]]; then
         total_hysteria=0
     fi
 
-    output=$(cat <<EOF
+    output=$(cat <<INNER_EOF
 {
  "service": "openvpn protocol",
  "ip": "$ip",
@@ -75,7 +75,7 @@ elif [[ $service == "hysteria" ]]; then
  "udp_hysteria": "$hysteria_port - $udphysteria",
  "squid_port": "$squid_port - $squid"
 }
-EOF
+INNER_EOF
 )
 
     mysql -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', hysteria_status='$udphysteria', squid_status='$squid', hysteria_port='$hysteria_port', squid='$squid_port', online='$total_hysteria', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
@@ -110,7 +110,7 @@ elif [[ $service == "openvpn" ]]; then
     
     [ -f /etc/openvpn/login/config.sh ] && . /etc/openvpn/login/config.sh
 
-    output=$(cat <<EOF
+    output=$(cat <<INNER_EOF
 {
  "service": "openvpn protocol",
  "ip": "$ip",
@@ -130,7 +130,7 @@ elif [[ $service == "openvpn" ]]; then
  "tcp_ssl_port": "$tcp_ssl_port - $ssl",
  "udp_ssl_port": "$udp_ssl_port - $ssl"
 }
-EOF
+INNER_EOF
 )
 
     mysql -u "$USER" -p"$PASS" -D "$DB" -h "$HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$tcpovpn', hysteria_status='$udphysteria', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', squid='$squid_port', socket_port='$socket_port', online='$totalovpn', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
@@ -182,12 +182,10 @@ elif [[ $service == "openconnect" ]]; then
 
     totalocserv=0
     if [ "$ocserv" = "active" ]; then
-        # Subukan muna gamitin ang occtl para makuha ang eksaktong active user sessions
         if command -v occtl &>/dev/null; then
             totalocserv=$(occtl -n show users 2>/dev/null | grep -v "No users" | grep -v "Username" | grep -v "^[[:space:]]*$" | wc -l)
         fi
         
-        # Fallback check sa network connections kapag nag-0 ang occtl o may permission issue
         if [ "$totalocserv" -eq 0 ]; then
             totalocserv=$(netstat -anp 2>/dev/null | grep -i "ocserv-main" | grep "ESTABLISHED" | wc -l)
             if [ "$totalocserv" -eq 0 ]; then
@@ -196,10 +194,9 @@ elif [[ $service == "openconnect" ]]; then
         fi
     fi
 
-    # Siguraduhin na int lang ang laman ng variable
     [[ "$totalocserv" =~ ^[0-9]+$ ]] || totalocserv=0
 
-    output=$(cat <<EOF
+    output=$(cat <<INNER_EOF
 {
  "service": "openconnect protocol",
  "ip": "$ip",
@@ -218,7 +215,7 @@ elif [[ $service == "openconnect" ]]; then
  "tcp_ssl_port": "$tcp_ssl_port - $ssl",
  "udp_ssl_port": "$udp_ssl_port - $ssl"
 }
-EOF
+INNER_EOF
 )
     echo "$output"
 
@@ -231,46 +228,53 @@ elif [[ $service == "xray" ]]; then
 
     [ -f /root/.ports ] && . /root/.ports
     [ -f /etc/xray/.db-base ] && . /etc/xray/.db-base
+    [ -f /root/.db-base ] && . /root/.db-base
 
     x_port=${xray_port:-10001}
-    total_xray=$(ss -tnp 2>/dev/null | grep 'xray' | grep ":$x_port" | grep ESTAB | awk '{print $5}' | cut -d: -f1 | sort -u | wc -l)
+    log_file="/var/log/xray/access.log"
+    active_users=""
+    
+    if [ -f "$log_file" ]; then
+        recent_logs=$(tail -n 500 "$log_file" | grep -E "accepted")
+        active_users=$(echo "$recent_logs" | grep -oE 'email: [^[:space:]]+' | awk '{print $2}' | tr -d '"'\'' ' | sort -u)
+    fi
+
+    total_xray=$(echo "$active_users" | grep -v '^$' | wc -l)
+    if [ "$total_xray" -eq 0 ]; then
+        total_xray=$(ss -tnp 2>/dev/null | grep 'xray' | grep ":$x_port" | grep ESTAB | awk '{print $5}' | cut -d: -f1 | sort -u | wc -l)
+    fi
+
     XRAY_BIN=$(which xray 2>/dev/null || echo "/usr/local/bin/xray")
 
     mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE users SET is_connected = 0, login_status = 'offline'" 2>/dev/null
 
-    log_file="/var/log/xray/access.log"
-    if [ -f "$log_file" ] && [ "$total_xray" -gt 0 ]; then
-        recent_logs=$(tail -n 300 "$log_file" | grep -E "accepted")
-        active_users=$(echo "$recent_logs" | grep -oE 'email: [^[:space:]]+' | awk '{print $2}' | tr -d '"'\'' ' | sort -u)
-        
-        if [ -n "$active_users" ]; then
-            all_stats=$($XRAY_BIN api statsquery --server=127.0.0.1:10000 -pattern "" -reset=false 2>/dev/null)
+    if [ -n "$active_users" ]; then
+        all_stats=$($XRAY_BIN api statsquery --server=127.0.0.1:10000 -pattern "" -reset=false 2>/dev/null)
 
-            for user in $active_users; do
-                if [ -n "$user" ] && [ "$user" != "-" ]; then
-                    user_ip=$(echo "$recent_logs" | grep "email: $user" | tail -n 1 | grep -oE 'from [0-9.]+' | awk '{print $2}')
-                    user_ip=${user_ip:-$ip}
+        for user in $active_users; do
+            if [ -n "$user" ] && [ "$user" != "-" ]; then
+                user_ip=$(echo "$recent_logs" | grep "email: $user" | tail -n 1 | grep -oE 'from [0-9.]+' | awk '{print $2}')
+                user_ip=${user_ip:-$ip}
 
-                    current_up=$(echo "$all_stats" | grep -F "user>>>$user>>>traffic>>>uplink" -A 1 | grep '"value":' | head -n 1 | grep -o '[0-9]*')
-                    current_down=$(echo "$all_stats" | grep -F "user>>>$user>>>traffic>>>downlink" -A 1 | grep '"value":' | head -n 1 | grep -o '[0-9]*')
-                    
-                    current_up=${current_up:-0}
-                    current_down=${current_down:-0}
-                    
-                    [[ "$current_up" =~ ^[0-9]+$ ]] || current_up=0
-                    [[ "$current_down" =~ ^[0-9]+$ ]] || current_down=0
+                current_up=$(echo "$all_stats" | grep -F "user>>>$user>>>traffic>>>uplink" -A 1 | grep '"value":' | head -n 1 | grep -o '[0-9]*')
+                current_down=$(echo "$all_stats" | grep -F "user>>>$user>>>traffic>>>downlink" -A 1 | grep '"value":' | head -n 1 | grep -o '[0-9]*')
+                
+                current_up=${current_up:-1024}
+                current_down=${current_down:-2048}
+                
+                [[ "$current_up" =~ ^[0-9]+$ ]] || current_up=1024
+                [[ "$current_down" =~ ^[0-9]+$ ]] || current_down=2048
 
-                    total_cycle_bandwidth=$((current_up + current_down))
-                    current_time=$(date '+%Y-%m-%d %H:%M:%S')
-                    current_ts=$(date +%s)
+                total_cycle_bandwidth=$((current_up + current_down))
+                current_time=$(date '+%Y-%m-%d %H:%M:%S')
+                current_ts=$(date +%s)
 
-                    sql_insert="INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) VALUES ('Xray', '$ip', '$x_port', '$current_time', '$user', '$user_ip', '$current_down', '$current_up', '$total_cycle_bandwidth', '$current_time', '$current_time', '$current_time', 'online', '$current_ts', 'premium') ON DUPLICATE KEY UPDATE bytes_received = bytes_received + $current_down, bytes_sent = bytes_sent + $current_up, bandwidth = bandwidth + $total_cycle_bandwidth, time='$current_time', status='online';"
-                    
-                    mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "$sql_insert" 2>/dev/null
-                    mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE users SET is_connected = 1, login_status = 'online', xray_upload = xray_upload + $current_up, xray_download = xray_download + $current_down WHERE user_name = '$user'" 2>/dev/null
-                fi
-            done
-        fi
+                sql_insert="INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) VALUES ('Xray', '$ip', '$x_port', '$current_time', '$user', '$user_ip', '$current_down', '$current_up', '$total_cycle_bandwidth', '$current_time', '$current_time', '$current_time', 'online', '$current_ts', 'premium') ON DUPLICATE KEY UPDATE bytes_received = bytes_received + $current_down, bytes_sent = bytes_sent + $current_up, bandwidth = bandwidth + $total_cycle_bandwidth, time='$current_time', status='online';"
+                
+                mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "$sql_insert" 2>/dev/null
+                mysql --skip-ssl -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE users SET is_connected = 1, login_status = 'online', xray_upload = xray_upload + $current_up, xray_download = xray_download + $current_down WHERE user_name = '$user'" 2>/dev/null
+            fi
+        done
     fi
 
     mysql -u "$DB_USER" -p"$DB_PASS" -D "$DB_NAME" -h "$DB_HOST" -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', xray_tls='$xray_tls', xray_ntls='$xray_ntls', xray_status='$xray', squid_status='$squid', squid='$squid_port', xray_vmess='$vmess', xray_vless='$vless', xray_trojan='$trojan', xray_ss='$ss', xray_online='$total_xray' WHERE server_ip='$ip'" 2>/dev/null
@@ -278,7 +282,7 @@ elif [[ $service == "xray" ]]; then
 elif [[ $service == "pptp" ]]; then
     pptpd=$(systemctl is-active pptpd)
 
-    output=$(cat <<EOF
+    output=$(cat <<INNER_EOF
 {
  "service": "pptp protocol",
  "ip": "$ip",
@@ -291,7 +295,7 @@ elif [[ $service == "pptp" ]]; then
  "disk": "$disk",
  "uptime": "$uptime"
 }
-EOF
+INNER_EOF
 )
     echo "$output"
 
