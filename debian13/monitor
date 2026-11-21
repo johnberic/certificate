@@ -12,10 +12,8 @@ bandwidth=$(vnstat --oneline | cut -d ";" -f 15)
 echo "[DEBUG] Service requested: $service"
 echo "[DEBUG] Server IP: $ip"
 
-# Kunin ang ports configuration kung nag-eexist
 [ -f /root/.ports ] && . /root/.ports
 
-# I-set ang ports (Dropbear ay nasa port 22 base sa netstat mo)
 ssh_port=${ssh_port:-22}
 dropbear_port=${dropbear_port:-22}
 socket_port=${socket_port:-80}
@@ -23,7 +21,6 @@ squid_port=${squid_port:-3128}
 ssh_ssl_port=${ssh_ssl_port:-443}
 dropbear_ssl_port=${dropbear_ssl_port:-442}
 
-# Kunin ang DB credentials kung nag-eexist
 [ -f /root/.db-base ] && . /root/.db-base
 [ -f /etc/openvpn/login/config.sh ] && . /etc/openvpn/login/config.sh
 
@@ -32,295 +29,336 @@ USER_USE="${USER:-$DB_USER}"
 PASS_USE="${PASS:-$DB_PASS}"
 HOST_USE="${HOST:-$DB_HOST}"
 
-# Function para sa passwordless MySQL execution gamit ang MYSQL_PWD env variable
 run_mysql() {
-    MYSQL_PWD="$PASS_USE" mysql --skip-ssl -u "$USER_USE" -D "$DB_USE" -h "$HOST_USE" "$@"
+MYSQL_PWD="$PASS_USE" mysql --skip-ssl -u "$USER_USE" -D "$DB_USE" -h "$HOST_USE" "$@"
 }
 
 if [[ $service == "ssh" ]]; then
-    ssh=$(systemctl is-active sshd)
-    dropbear=$(systemctl is-active dropbear)
-    squid=$(systemctl is-active squid)
-    ssl=$(systemctl is-active stunnel4)
-    socket=$((echo >/dev/tcp/localhost/$socket_port) &>/dev/null && echo "active" || echo "inactive")
-    
-    total_dropbear=$(netstat -natp 2>/dev/null | awk "/$ip:$dropbear_port\y/ && /ESTABLISHED/ && /dropbear/" | wc -l)
-    total_socket=$(netstat -natp 2>/dev/null | awk "/$ip:$socket_port\y/ && /ESTABLISHED/ && /goproxy|python/" | wc -l)
-    total_ssl=$(netstat -natp 2>/dev/null | awk "/$ip:443\y/ && /ESTABLISHED/ && /stunnel4/" | wc -l)
-    totalssh=$((total_dropbear + total_socket + total_ssl))
-    
-    output=$(cat <<EOF
+ssh=$(systemctl is-active sshd)
+dropbear=$(systemctl is-active dropbear)
+squid=$(systemctl is-active squid)
+ssl=$(systemctl is-active stunnel4)
+socket=$((echo >/dev/tcp/localhost/$socket_port) &>/dev/null && echo "active" || echo "inactive")
+
+total_dropbear=$(netstat -natp 2>/dev/null | awk "/$ip:$dropbear_port\y/ && /ESTABLISHED/ && /dropbear/" | wc -l)
+total_socket=$(netstat -natp 2>/dev/null | awk "/$ip:$socket_port\y/ && /ESTABLISHED/ && /goproxy|python/" | wc -l)
+total_ssl=$(netstat -natp 2>/dev/null | awk "/$ip:443\y/ && /ESTABLISHED/ && /stunnel4/" | wc -l)
+totalssh=$((total_dropbear + total_socket + total_ssl))
+
+output=$(cat <<EOD
 {
- "service": "ssh protocol",
- "ip": "$ip",
- "users": "$totalssh",
- "bandwidth": "$bandwidth",
- "os": "$os",
- "distro": "$distro",
- "cpu": "$cpu",
- "memory": "$memory",
- "disk": "$disk",
- "uptime": "$uptime",
- "ssh_port": "$ssh_port - $dropbear",
- "dropbear_port": "$dropbear_port - $dropbear",
- "socket_port": "$socket_port - $socket",
- "squid_port": "$squid_port - $squid",
- "ssh_ssl_port": "$ssh_ssl_port - $ssl",
- "dropbear_ssl_port": "$dropbear_ssl_port - $ssl"
+"service": "ssh protocol",
+"ip": "$ip",
+"users": "$totalssh",
+"bandwidth": "$bandwidth",
+"os": "$os",
+"distro": "$distro",
+"cpu": "$cpu",
+"memory": "$memory",
+"disk": "$disk",
+"uptime": "$uptime",
+"ssh_port": "$ssh_port - $dropbear",
+"dropbear_port": "$dropbear_port - $dropbear",
+"socket_port": "$socket_port - $socket",
+"squid_port": "$squid_port - $squid",
+"ssh_ssl_port": "$ssh_ssl_port - $ssl",
+"dropbear_ssl_port": "$dropbear_ssl_port - $ssl"
 }
-EOF
+EOD
 )
-    echo "$output"
+echo "$output"
 
 elif [[ $service == "hysteria" ]]; then
-    udphysteria=$(systemctl is-active hysteria-luma.service)
-    udphysteria2=$(systemctl is-active hysteria-v2.service)
-    squid=$(systemctl is-active squid)
-    
-    hysteria_port=${hysteria_port:-5666}
-    hysteria2_port=${hysteria2_port:-5667}
+udphysteria=$(systemctl is-active hysteria-luma.service)
+udphysteria2=$(systemctl is-active hysteria-v2.service)
+squid=$(systemctl is-active squid)
 
-    echo "[DEBUG] Hysteria v1 Status: $udphysteria | Port: $hysteria_port"
-    echo "[DEBUG] Hysteria v2 Status: $udphysteria2 | Port: $hysteria2_port"
+hysteria_port=${hysteria_port:-5666}
+hysteria2_port=${hysteria2_port:-5667}
 
-    if [ "$udphysteria" = "active" ] || [ "$udphysteria2" = "active" ]; then
-        total_hysteria=1
-    else
-        total_hysteria=0
-    fi
+echo "[DEBUG] Hysteria v1 Status: $udphysteria | Port: $hysteria_port"
+echo "[DEBUG] Hysteria v2 Status: $udphysteria2 | Port: $hysteria2_port"
 
-    output=$(cat <<EOF
+if [ "$udphysteria" = "active" ] || [ "$udphysteria2" = "active" ]; then
+    total_hysteria=1
+else
+    total_hysteria=0
+fi
+
+output=$(cat <<EOD
 {
- "service": "hysteria protocol",
- "ip": "$ip",
- "users": "$total_hysteria",
- "bandwidth": "$bandwidth",
- "os": "$os",
- "distro": "$distro",
- "cpu": "$cpu",
- "memory": "$memory",
- "disk": "$disk",
- "uptime": "$uptime",
- "udp_hysteria": "$hysteria_port - $udphysteria",
- "udp_hysteria2": "$hysteria2_port - $udphysteria2",
- "squid_port": "$squid_port - $squid"
+"service": "hysteria protocol",
+"ip": "$ip",
+"users": "$total_hysteria",
+"bandwidth": "$bandwidth",
+"os": "$os",
+"distro": "$distro",
+"cpu": "$cpu",
+"memory": "$memory",
+"disk": "$disk",
+"uptime": "$uptime",
+"udp_hysteria": "$hysteria_port - $udphysteria",
+"udp_hysteria2": "$hysteria2_port - $udphysteria2",
+"squid_port": "$squid_port - $squid"
 }
-EOF
+EOD
 )
-    echo "$output"
+echo "$output"
 
-    echo "[DEBUG] Running MySQL UPDATE for hysteria..."
-    run_mysql -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', hysteria_status='$udphysteria', hysteria2_status='$udphysteria2', squid_status='$squid', hysteria_port='$hysteria_port', hysteria2_port='$hysteria2_port', squid='$squid_port', online='$total_hysteria', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
-    echo "[DEBUG] MySQL query exit code: $?"
+echo "[DEBUG] Running MySQL UPDATE for hysteria..."
+run_mysql -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', hysteria_status='$udphysteria', hysteria2_status='$udphysteria2', squid_status='$squid', hysteria_port='$hysteria_port', hysteria2_port='$hysteria2_port', squid='$squid_port', online='$total_hysteria', hysteria_online='$total_hysteria' WHERE server_ip='$ip'"
+echo "[DEBUG] MySQL query exit code: $?"
 
 elif [[ $service == "socksip" ]]; then
-    udpSERVER=$(systemctl is-active UDPserver)
-    squid=$(systemctl is-active squid)
+udpSERVER=$(systemctl is-active UDPserver)
+squid=$(systemctl is-active squid)
 
-    echo "[DEBUG] Running MySQL UPDATE for socksip..."
-    run_mysql -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', socksip_status='$udpSERVER', socksip_port='$socksip_port' WHERE server_ip='$ip'"
-    echo "[DEBUG] MySQL query exit code: $?"
+echo "[DEBUG] Running MySQL UPDATE for socksip..."
+run_mysql -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', socksip_status='$udpSERVER', socksip_port='$socksip_port' WHERE server_ip='$ip'"
+echo "[DEBUG] MySQL query exit code: $?"
 
 elif [[ $service == "openvpn" ]] || [[ $service == "aio" ]]; then
-    tcpovpn=$(systemctl is-active openvpn@server2.service)
-    udpovpn=$(systemctl is-active openvpn@server.service)
-    
-    udphysteria=$(systemctl is-active hysteria-luma.service)
-    udphysteria2=$(systemctl is-active hysteria-v2.service)
+tcpovpn=$(systemctl is-active openvpn@server2.service)
+udpovpn=$(systemctl is-active openvpn@server.service)
 
-    xray=$(systemctl is-active xray.service)
-    slowdns=$(systemctl is-active server-sldns.service)
-    sshd=$(systemctl is-active sshd)
-    dropbear=$(systemctl is-active dropbear)
-    squid=$(systemctl is-active squid)
-    ssl=$(systemctl is-active stunnel4)
-    socket=$((echo >/dev/tcp/localhost/$socket_port) &>/dev/null && echo "active" || echo "inactive")
-    
-    # WireGuard Status at Port checking para malaman kung buhay ang service
-    wireguard_status=$(systemctl is-active wg-quick@wg0.service)
-    if [ -f /etc/wireguard/params ]; then
-        wireguard_port=$(grep "^SERVER_PORT=" /etc/wireguard/params | cut -d'=' -f2)
-    fi
-    wireguard_port=${wireguard_port:-51820}
-    
-    ovpn_users=""
-    [ -f /etc/openvpn/server/tcpclient.log ] && {
-        ovpn_users="$ovpn_users $(awk '/^ROUTING_TABLE/ {print $2}' /etc/openvpn/server/tcpclient.log 2>/dev/null)"
-    }
-    [ -f /etc/openvpn/server/udpclient.log ] && {
-        ovpn_users="$ovpn_users $(awk '/^ROUTING_TABLE/ {print $2}' /etc/openvpn/server/udpclient.log 2>/dev/null)"
-    }
-    totalovpn=$(echo "$ovpn_users" | xargs -n1 | grep -v '^$' | sort -u | wc -l)
-    
-    active_ssh_users=$(ps aux | grep -iE 'sshd:|dropbear' | grep -v grep | awk '{print $1}' | grep -vE 'root|nobody|daemon' | sort -u)
+udphysteria=$(systemctl is-active hysteria-luma.service)
+udphysteria2=$(systemctl is-active hysteria-v2.service)
 
-    hysteria_port=${hysteria_port:-5666}
-    hysteria2_port=${hysteria2_port:-5667}
+xray=$(systemctl is-active xray.service)
+slowdns=$(systemctl is-active server-sldns.service)
+sshd=$(systemctl is-active sshd)
+dropbear=$(systemctl is-active dropbear)
+squid=$(systemctl is-active squid)
+ssl=$(systemctl is-active stunnel4)
+socket=$((echo >/dev/tcp/localhost/$socket_port) &>/dev/null && echo "active" || echo "inactive")
 
-    hysteria_v1_online=0
-    hysteria_v2_online=0
+wireguard_status=$(systemctl is-active wg-quick@wg0.service)
+if [ -f /etc/wireguard/params ]; then
+    wireguard_port=$(grep "^SERVER_PORT=" /etc/wireguard/params | cut -d'=' -f2)
+fi
+wireguard_port=${wireguard_port:-51820}
 
-    if [ "$udphysteria" = "active" ]; then
-        hysteria_v1_online=$(ss -ulpn 2>/dev/null | grep ":$hysteria_port " | wc -l)
-    fi
-
-    if [ "$udphysteria2" = "active" ]; then
-        hysteria_v2_online=$(ss -ulpn 2>/dev/null | grep ":$hysteria2_port " | wc -l)
-    fi
-
-    total_hysteria=$((hysteria_v1_online + hysteria_v2_online))
-
-    target_ip="${ip:-0.0.0.0}"
-    if [ "$target_ip" = "0.0.0.0" ] || [ -z "$ip" ]; then
-        total_dropbear=$(netstat -natp 2>/dev/null | grep ":$dropbear_port " | grep "ESTABLISHED" | grep "dropbear" | wc -l)
-    else
-        total_dropbear=$(netstat -natp 2>/dev/null | awk "/$ip:$dropbear_port/ && /ESTABLISHED/ && /dropbear/" | wc -l)
-    fi
-    totalssh=$total_dropbear
-
-    # MySQL Database Update para sa Server List status (Idinagdag ang wireguard_status at wireguard_port)
-    run_mysql -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$tcpovpn', hysteria_status='$udphysteria', hysteria2_status='$udphysteria2', hysteria2_port='$hysteria2_port', xray_status='$xray', ssh_online='$totalssh', slowdns_status='$slowdns', ssh_status='$sshd', dropbear_status='$dropbear', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', xray_port='$xray_port', slowdns_port='$slowdns_port', ssh_port='$ssh_port', dropbear_port='$dropbear_port', squid='$squid_port', online='$totalovpn', hysteria_online='$total_hysteria', wireguard_status='$wireguard_status', wireguard_port='$wireguard_port' WHERE server_ip='$ip' OR server_ip='127.0.0.1'"
-
-    echo "[DEBUG] Updating users connection status in database..."
-    all_online_users=$(echo "$active_ssh_users $ovpn_users" | xargs -n1 | grep -v '^$' | sort -u)
-
-    for u in $all_online_users; do
-        if [ -n "$u" ] && [ "$u" != "root" ] && [ "$u" != "NULL" ]; then
-            run_mysql -e "UPDATE users SET is_connected = 1 WHERE username='$u' OR user_name='$u';"
-            echo "[DEBUG] User Online Detected & Updated: $u"
+ovpn_online_users=""
+for logfile in /etc/openvpn/server/tcpclient.log /etc/openvpn/server/udpclient.log; do
+    if [ -f "$logfile" ]; then
+        users_from_log=$(awk -F',' '
+            /^Common Name,/ {in_clients=1; next}
+            /^ROUTING TABLE/ || /^GLOBAL STATS/ || /^END/ {in_clients=0}
+            in_clients && NF>=4 && $1!="" && $1!="Common Name" && $1!="UNDEF" {print $1}
+        ' "$logfile" 2>/dev/null)
+        if [ -z "$users_from_log" ]; then
+            users_from_log=$(awk -F',' '/^CLIENT_LIST,/ {print $2}' "$logfile" 2>/dev/null)
         fi
-    done
+        ovpn_online_users="$ovpn_online_users $users_from_log"
+    fi
+done
 
-    echo "[DEBUG] Updating bandwidth for active connected users..."
-    run_mysql -e "UPDATE users SET bandwidth = IFNULL(bandwidth, 0) + 5242880 WHERE is_connected = 1;" 
-    
-    echo "[DEBUG] Server & Online Users Sync Completed Successfully."
-elif [[ $service == "openconnect" ]]; then
-    ocserv=$(systemctl is-active ocserv)
-    udphysteria=$(systemctl is-active hysteria-luma.service)
-    udphysteria2=$(systemctl is-active hysteria-v2.service)
-    squid=$(systemctl is-active squid)
-    ssl=$(systemctl is-active stunnel4)
-    socket=$((echo >/dev/tcp/localhost/$socket_port) &>/dev/null && echo "active" || echo "inactive")
-    
-    hysteria_port=${hysteria_port:-5666}
-    hysteria2_port=${hysteria2_port:-5667}
+ovpn_online_list=$(echo "$ovpn_online_users" | xargs -n1 2>/dev/null | grep -vE '^(|Common Name|UNDEF|root|nobody|daemon|NULL)$' | sort -u)
+totalovpn=$(echo "$ovpn_online_list" | grep -v '^$' | wc -l)
+[[ "$totalovpn" =~ ^[0-9]+$ ]] || totalovpn=0
 
-    totalocserv=0
-    if [ "$ocserv" = "active" ]; then
-        if command -v occtl &>/dev/null; then
-            totalocserv=$(occtl -n show users 2>/dev/null | grep -v "No users" | grep -v "Username" | grep -v "^[[:space:]]*$" | wc -l)
-        fi
-        if [ "$totalocserv" -eq 0 ]; then
-            totalocserv=$(netstat -anp 2>/dev/null | grep -i "ocserv-main" | grep "ESTABLISHED" | wc -l)
-            if [ "$totalocserv" -eq 0 ]; then
-                totalocserv=$(ss -tuapn 2>/dev/null | grep -i "ocserv" | grep "ESTAB" | wc -l)
+active_ssh_users=$(ps aux | grep -iE 'sshd:|dropbear' | grep -v grep | awk '{print $1}' | grep -vE 'root|nobody|daemon' | sort -u)
+
+hysteria_port=${hysteria_port:-5666}
+hysteria2_port=${hysteria2_port:-5667}
+
+hysteria_v1_online=0
+hysteria_v2_online=0
+
+if [ "$udphysteria" = "active" ]; then
+    hysteria_v1_online=$(ss -ulpn 2>/dev/null | grep ":$hysteria_port " | wc -l)
+fi
+
+if [ "$udphysteria2" = "active" ]; then
+    hysteria_v2_online=$(ss -ulpn 2>/dev/null | grep ":$hysteria2_port " | wc -l)
+fi
+
+total_hysteria=$((hysteria_v1_online + hysteria_v2_online))
+
+target_ip="${ip:-0.0.0.0}"
+if [ "$target_ip" = "0.0.0.0" ] || [ -z "$ip" ]; then
+    total_dropbear=$(netstat -natp 2>/dev/null | grep ":$dropbear_port " | grep "ESTABLISHED" | grep "dropbear" | wc -l)
+else
+    total_dropbear=$(netstat -natp 2>/dev/null | awk "/$ip:$dropbear_port/ && /ESTABLISHED/ && /dropbear/" | wc -l)
+fi
+totalssh=$total_dropbear
+
+run_mysql -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$tcpovpn', hysteria_status='$udphysteria', hysteria2_status='$udphysteria2', hysteria2_port='$hysteria2_port', xray_status='$xray', ssh_online='$totalssh', slowdns_status='$slowdns', ssh_status='$sshd', dropbear_status='$dropbear', udp_status='$udpovpn', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', xray_port='$xray_port', slowdns_port='$slowdns_port', ssh_port='$ssh_port', dropbear_port='$dropbear_port', squid='$squid_port', online='$totalovpn', hysteria_online='$total_hysteria', wireguard_status='$wireguard_status', wireguard_port='$wireguard_port' WHERE server_ip='$ip' OR server_ip='127.0.0.1'" 2>/dev/null
+
+echo "[DEBUG] Step 1: Resetting connected status to offline..."
+run_mysql -e "UPDATE users SET is_connected = 0, login_status = 'offline' WHERE is_connected = 1;"
+
+current_time=$(date '+%Y-%m-%d %H:%M:%S')
+current_ts=$(date +%s)
+all_online_users=$(echo "$active_ssh_users $ovpn_online_list" | xargs -n1 2>/dev/null | grep -v '^$' | sort -u)
+
+echo "[DEBUG] Step 2: Processing active users & bandwidth..."
+for u in $all_online_users; do
+    if [ -n "$u" ] && [ "$u" != "root" ] && [ "$u" != "NULL" ]; then
+        bytes_rx=0
+        bytes_tx=0
+        user_ip="$ip"
+
+        for logfile in /etc/openvpn/server/tcpclient.log /etc/openvpn/server/udpclient.log; do
+            if [ -f "$logfile" ]; then
+                line=$(awk -F',' -v target="$u" '
+                    /^Common Name,/ {in_clients=1; next}
+                    /^ROUTING TABLE/ || /^GLOBAL STATS/ || /^END/ {in_clients=0}
+                    in_clients && $1==target {print $0}
+                ' "$logfile" 2>/dev/null | tail -n 1)
+                if [ -n "$line" ]; then
+                    rx=$(echo "$line" | awk -F',' '{print $3}' | tr -dc '0-9')
+                    tx=$(echo "$line" | awk -F',' '{print $4}' | tr -dc '0-9')
+                    real_ip=$(echo "$line" | awk -F',' '{print $2}' | cut -d':' -f1)
+                    [[ "$rx" =~ ^[0-9]+$ ]] || rx=0
+                    [[ "$tx" =~ ^[0-9]+$ ]] || tx=0
+                    bytes_rx=$((bytes_rx + rx))
+                    bytes_tx=$((bytes_tx + tx))
+                    [ -n "$real_ip" ] && user_ip="$real_ip"
+                fi
             fi
+        done
+
+        total_bytes=$((bytes_rx + bytes_tx))
+        if [ "$total_bytes" -eq 0 ]; then
+            total_bytes=5242880
+        fi
+
+        run_mysql -e "UPDATE users SET is_connected = 1, login_status = 'online', bandwidth = IFNULL(bandwidth, 0) + $total_bytes WHERE user_name = '$u';"
+        run_mysql -e "INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) VALUES ('OpenVPN', '$ip', '${tcp_port:-1194}', '$current_time', '$u', '$user_ip', '$bytes_rx', '$bytes_tx', '$total_bytes', '$current_time', '$current_time', '$current_time', 'online', '$current_ts', 'premium') ON DUPLICATE KEY UPDATE bytes_received = bytes_received + $bytes_rx, bytes_sent = bytes_sent + $bytes_tx, bandwidth = bandwidth + $total_bytes, time='$current_time', status='online';" 2>/dev/null
+
+        echo "[DEBUG] Updated User: $u -> Online | Total Bytes Added: $total_bytes"
+    fi
+done
+
+echo "[DEBUG] Server & Online Users Sync Completed Successfully."
+
+elif [[ $service == "openconnect" ]]; then
+ocserv=$(systemctl is-active ocserv)
+udphysteria=$(systemctl is-active hysteria-luma.service)
+udphysteria2=$(systemctl is-active hysteria-v2.service)
+squid=$(systemctl is-active squid)
+ssl=$(systemctl is-active stunnel4)
+socket=$((echo >/dev/tcp/localhost/$socket_port) &>/dev/null && echo "active" || echo "inactive")
+
+hysteria_port=${hysteria_port:-5666}
+hysteria2_port=${hysteria2_port:-5667}
+
+totalocserv=0
+if [ "$ocserv" = "active" ]; then
+    if command -v occtl &>/dev/null; then
+        totalocserv=$(occtl -n show users 2>/dev/null | grep -v "No users" | grep -v "Username" | grep -v "^[[:space:]]*$" | wc -l)
+    fi
+    if [ "$totalocserv" -eq 0 ]; then
+        totalocserv=$(netstat -anp 2>/dev/null | grep -i "ocserv-main" | grep "ESTABLISHED" | wc -l)
+        if [ "$totalocserv" -eq 0 ]; then
+            totalocserv=$(ss -tuapn 2>/dev/null | grep -i "ocserv" | grep "ESTAB" | wc -l)
         fi
     fi
+fi
 
-    [[ "$totalocserv" =~ ^[0-9]+$ ]] || totalocserv=0
+[[ "$totalocserv" =~ ^[0-9]+$ ]] || totalocserv=0
 
-    output=$(cat <<EOF
+output=$(cat <<EOD
 {
- "service": "openconnect protocol",
- "ip": "$ip",
- "users": "$totalocserv",
- "bandwidth": "$bandwidth",
- "os": "$os",
- "distro": "$distro",
- "cpu": "$cpu",
- "memory": "$memory",
- "disk": "$disk",
- "uptime": "$uptime",
- "udp_hysteria": "$hysteria_port - $udphysteria",
- "udp_hysteria2": "$hysteria2_port - $udphysteria2",
- "tcp_port": "$tcp_port - $ocserv",
- "socket_port": "$socket_port - $socket",
- "squid_port": "$squid_port - $squid",
- "tcp_ssl_port": "$tcp_ssl_port - $ssl",
- "udp_ssl_port": "$udp_ssl_port - $ssl"
+"service": "openconnect protocol",
+"ip": "$ip",
+"users": "$totalocserv",
+"bandwidth": "$bandwidth",
+"os": "$os",
+"distro": "$distro",
+"cpu": "$cpu",
+"memory": "$memory",
+"disk": "$disk",
+"uptime": "$uptime",
+"udp_hysteria": "$hysteria_port - $udphysteria",
+"udp_hysteria2": "$hysteria2_port - $udphysteria2",
+"tcp_port": "$tcp_port - $ocserv",
+"socket_port": "$socket_port - $socket",
+"squid_port": "$squid_port - $squid",
+"tcp_ssl_port": "$tcp_ssl_port - $ssl",
+"udp_ssl_port": "$udp_ssl_port - $ssl"
 }
-EOF
+EOD
 )
-    echo "$output"
+echo "$output"
 
-    echo "[DEBUG] Running MySQL UPDATE for openconnect..."
-    run_mysql -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$ocserv', hysteria_status='$udphysteria', hysteria2_status='$udphysteria2', udp_status='$ocserv', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', hysteria2_port='$hysteria2_port', squid='$squid_port', online='$totalocserv', hysteria_online='$totalocserv' WHERE server_ip='$ip'"
-    echo "[DEBUG] MySQL query exit code: $?"
+echo "[DEBUG] Running MySQL UPDATE for openconnect..."
+run_mysql -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', tcpssl='$tcp_ssl_port', udpssl='$udp_ssl_port', tcp_status='$ocserv', hysteria_status='$udphysteria', hysteria2_status='$udphysteria2', udp_status='$ocserv', ssl_status='$ssl', squid_status='$squid', socket_status='$socket', tcp='$tcp_port', udp='$udp_port', hysteria_port='$hysteria_port', hysteria2_port='$hysteria2_port', squid='$squid_port', online='$totalocserv', hysteria_online='$totalocserv' WHERE server_ip='$ip'"
+echo "[DEBUG] MySQL query exit code: $?"
 
 elif [[ $service == "xray" ]]; then
-    xray=$(systemctl is-active xray.service)
-    nginx=$(systemctl is-active nginx)
-    squid=$(systemctl is-active squid)
+xray=$(systemctl is-active xray.service)
+nginx=$(systemctl is-active nginx)
+squid=$(systemctl is-active squid)
 
-    [ -f /etc/xray/.db-base ] && . /etc/xray/.db-base
+[ -f /etc/xray/.db-base ] && . /etc/xray/.db-base
 
-    x_port=${xray_port:-10001}
-    total_xray=$(ss -tnp 2>/dev/null | grep 'xray' | grep ":$x_port" | grep ESTAB | awk '{print $5}' | cut -d: -f1 | sort -u | wc -l)
-    XRAY_BIN=$(which xray 2>/dev/null || echo "/usr/local/bin/xray")
+x_port=${xray_port:-10001}
+total_xray=$(ss -tnp 2>/dev/null | grep 'xray' | grep ":$x_port" | grep ESTAB | awk '{print $5}' | cut -d: -f1 | sort -u | wc -l)
+XRAY_BIN=$(which xray 2>/dev/null || echo "/usr/local/bin/xray")
 
-    run_mysql -e "UPDATE users SET is_connected = 0, login_status = 'offline'" 2>/dev/null
+run_mysql -e "UPDATE users SET is_connected = 0, login_status = 'offline'" 2>/dev/null
 
-    log_file="/var/log/xray/access.log"
-    if [ -f "$log_file" ] && [ "$total_xray" -gt 0 ]; then
-        recent_logs=$(tail -n 300 "$log_file" | grep -E "accepted")
-        active_users=$(echo "$recent_logs" | grep -oE 'email: [^[:space:]]+' | awk '{print $2}' | tr -d '"'\'' ' | sort -u)
-        
-        if [ -n "$active_users" ]; then
-            all_stats=$($XRAY_BIN api statsquery --server=127.0.0.1:10000 -pattern "" -reset=false 2>/dev/null)
+log_file="/var/log/xray/access.log"
+if [ -f "$log_file" ] && [ "$total_xray" -gt 0 ]; then
+    recent_logs=$(tail -n 300 "$log_file" | grep -E "accepted")
+    active_users=$(echo "$recent_logs" | grep -oE 'email: [^[:space:]]+' | awk '{print $2}' | tr -d '"'\'' ' | sort -u)
+    
+    if [ -n "$active_users" ]; then
+        all_stats=$($XRAY_BIN api statsquery --server=127.0.0.1:10000 -pattern "" -reset=false 2>/dev/null)
 
-            for user in $active_users; do
-                if [ -n "$user" ] && [ "$user" != "-" ]; then
-                    user_ip=$(echo "$recent_logs" | grep "email: $user" | tail -n 1 | grep -oE 'from [0-9.]+' | awk '{print $2}')
-                    user_ip=${user_ip:-$ip}
+        for user in $active_users; do
+            if [ -n "$user" ] && [ "$user" != "-" ]; then
+                user_ip=$(echo "$recent_logs" | grep "email: $user" | tail -n 1 | grep -oE 'from [0-9.]+' | awk '{print $2}')
+                user_ip=${user_ip:-$ip}
 
-                    current_up=$(echo "$all_stats" | grep -F "user>>>$user>>>traffic>>>uplink" -A 1 | grep '"value":' | head -n 1 | grep -o '[0-9]*')
-                    current_down=$(echo "$all_stats" | grep -F "user>>>$user>>>traffic>>>downlink" -A 1 | grep '"value":' | head -n 1 | grep -o '[0-9]*')
-                    
-                    current_up=${current_up:-0}
-                    current_down=${current_down:-0}
-                    
-                    [[ "$current_up" =~ ^[0-9]+$ ]] || current_up=0
-                    [[ "$current_down" =~ ^[0-9]+$ ]] || current_down=0
+                current_up=$(echo "$all_stats" | grep -F "user>>>$user>>>traffic>>>uplink" -A 1 | grep '"value":' | head -n 1 | grep -o '[0-9]*')
+                current_down=$(echo "$all_stats" | grep -F "user>>>$user>>>traffic>>>downlink" -A 1 | grep '"value":' | head -n 1 | grep -o '[0-9]*')
+                
+                current_up=${current_up:-0}
+                current_down=${current_down:-0}
+                
+                [[ "$current_up" =~ ^[0-9]+$ ]] || current_up=0
+                [[ "$current_down" =~ ^[0-9]+$ ]] || current_down=0
 
-                    total_cycle_bandwidth=$((current_up + current_down))
-                    current_time=$(date '+%Y-%m-%d %H:%M:%S')
-                    current_ts=$(date +%s)
+                total_cycle_bandwidth=$((current_up + current_down))
+                current_time=$(date '+%Y-%m-%d %H:%M:%S')
+                current_ts=$(date +%s)
 
-                    sql_insert="INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) VALUES ('Xray', '$ip', '$x_port', '$current_time', '$user', '$user_ip', '$current_down', '$current_up', '$total_cycle_bandwidth', '$current_time', '$current_time', '$current_time', 'online', '$current_ts', 'premium') ON DUPLICATE KEY UPDATE bytes_received = bytes_received + $current_down, bytes_sent = bytes_sent + $current_up, bandwidth = bandwidth + $total_cycle_bandwidth, time='$current_time', status='online';"
-                    
-                    run_mysql -e "$sql_insert" 2>/dev/null
-                    run_mysql -e "UPDATE users SET is_connected = 1, login_status = 'online', xray_upload = xray_upload + $current_up, xray_download = xray_download + $current_down WHERE user_name = '$user'" 2>/dev/null
-                fi
-            done
-        fi
+                sql_insert="INSERT INTO bandwidth_logs (server, server_ip, server_port, since_connected, username, ipaddress, bytes_received, bytes_sent, bandwidth, time, time_in, time_out, status, timestamp, category) VALUES ('Xray', '$ip', '$x_port', '$current_time', '$user', '$user_ip', '$current_down', '$current_up', '$total_cycle_bandwidth', '$current_time', '$current_time', '$current_time', 'online', '$current_ts', 'premium') ON DUPLICATE KEY UPDATE bytes_received = bytes_received + $current_down, bytes_sent = bytes_sent + $current_up, bandwidth = bandwidth + $total_cycle_bandwidth, time='$current_time', status='online';"
+                
+                run_mysql -e "$sql_insert" 2>/dev/null
+                run_mysql -e "UPDATE users SET is_connected = 1, login_status = 'online', xray_upload = xray_upload + $current_up, xray_download = xray_download + $current_down WHERE user_name = '$user'" 2>/dev/null
+            fi
+        done
     fi
+fi
 
-    echo "[DEBUG] Running MySQL UPDATE for xray..."
-    run_mysql -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', xray_tls='$xray_tls', xray_ntls='$xray_ntls', xray_status='$xray', squid_status='$squid', squid='$squid_port', xray_vmess='$vmess', xray_vless='$vless', xray_trojan='$trojan', xray_ss='$ss', xray_online='$total_xray' WHERE server_ip='$ip'" 2>/dev/null
-    echo "[DEBUG] MySQL query exit code: $?"
+echo "[DEBUG] Running MySQL UPDATE for xray..."
+run_mysql -e "UPDATE server_list SET cpu_model='$cpu', distro='$distro', memory='$memory', uptime='$uptime', disk='$disk', bandwidth='$bandwidth', os='$os', proto='$service', xray_tls='$xray_tls', xray_ntls='$xray_ntls', xray_status='$xray', squid_status='$squid', squid='$squid_port', xray_vmess='$vmess', xray_vless='$vless', xray_trojan='$trojan', xray_ss='$ss', xray_online='$total_xray' WHERE server_ip='$ip'" 2>/dev/null
+echo "[DEBUG] MySQL query exit code: $?"
 
 elif [[ $service == "pptp" ]]; then
-    pptpd=$(systemctl is-active pptpd)
+pptpd=$(systemctl is-active pptpd)
 
-    output=$(cat <<EOF
+output=$(cat <<EOD
 {
- "service": "pptp protocol",
- "ip": "$ip",
- "bandwidth": "$bandwidth",
- "pptpd": "$pptpd",
- "os": "$os",
- "distro": "$distro",
- "cpu": "$cpu",
- "memory": "$memory",
- "disk": "$disk",
- "uptime": "$uptime"
+"service": "pptp protocol",
+"ip": "$ip",
+"bandwidth": "$bandwidth",
+"pptpd": "$pptpd",
+"os": "$os",
+"distro": "$distro",
+"cpu": "$cpu",
+"memory": "$memory",
+"disk": "$disk",
+"uptime": "$uptime"
 }
-EOF
+EOD
 )
-    echo "$output"
+echo "$output"
 
 elif [[ $service == "reboot" ]]; then
-    sudo shutdown -r now
+sudo shutdown -r now
 fi
